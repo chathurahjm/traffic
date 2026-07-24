@@ -2,9 +2,7 @@ name: Daily Traffic Simulation
 
 on:
   schedule:
-    # Runs every day at 02:00 UTC
     - cron: '0 2 * * *'
-
   workflow_dispatch:
 
 jobs:
@@ -29,7 +27,7 @@ jobs:
 
       - name: Start server
         run: |
-          node server.js &
+          node server.js > server.log 2>&1 &
           sleep 10
 
       - name: Configure simulator
@@ -50,18 +48,31 @@ jobs:
         run: |
           curl -X POST http://localhost:3000/api/start
 
-      - name: Wait for completion
+      - name: Stream logs until completion
+        shell: bash
         run: |
-          while true; do
-            STATUS=$(curl -s http://localhost:3000/api/status)
-            echo "$STATUS"
+          curl -s --no-buffer http://localhost:3000/api/stream | \
+          while IFS= read -r line; do
+            if [[ "$line" == data:* ]]; then
+              DATA="${line#data: }"
 
-            RUNNING=$(echo "$STATUS" | jq -r '.stats.status')
+              MSG=$(echo "$DATA" | jq -r '.message // empty' 2>/dev/null)
+              TYPE=$(echo "$DATA" | jq -r '.type // empty' 2>/dev/null)
 
-            if [ "$RUNNING" = "idle" ]; then
-              echo "Simulation complete."
-              break
+              if [ -n "$MSG" ]; then
+                echo "[$TYPE] $MSG"
+              fi
+
+              STATUS=$(echo "$DATA" | jq -r '.status // empty' 2>/dev/null)
+
+              if [ "$STATUS" = "idle" ]; then
+                echo "✅ Simulation complete."
+                pkill -f "curl.*api/stream" || true
+                break
+              fi
             fi
-
-            sleep 30
           done
+
+      - name: Show server log if failed
+        if: failure()
+        run: cat server.log
