@@ -1,8 +1,7 @@
 {
   "targetUrls": [
-    "https://www.spellmemorizer.com/"
+    "https://justpasteit.in/"
   ],
-  "targetUrl": "https://www.spellmemorizer.com/",
   "totalVisits": 3000,
   "concurrency": 3,
   "minDwellTime": 12,

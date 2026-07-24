@@ -1,0 +1,67 @@
+name: Daily Traffic Simulation
+
+on:
+  schedule:
+    # Runs every day at 02:00 UTC
+    - cron: '0 2 * * *'
+
+  workflow_dispatch:
+
+jobs:
+  simulate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: browser-actions/setup-chrome@v1
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set Chrome Path
+        run: echo "CHROME_BIN=$(which google-chrome)" >> $GITHUB_ENV
+
+      - name: Start server
+        run: |
+          node server.js &
+          sleep 10
+
+      - name: Configure simulator
+        run: |
+          curl -X POST http://localhost:3000/api/config \
+            -H "Content-Type: application/json" \
+            -d '{
+              "targetUrl":"https://your-site.com",
+              "totalVisits":100,
+              "concurrency":3,
+              "minDwellTime":10,
+              "maxDwellTime":30,
+              "referrers":["direct","google","facebook"],
+              "headless":true
+            }'
+
+      - name: Start simulator
+        run: |
+          curl -X POST http://localhost:3000/api/start
+
+      - name: Wait for completion
+        run: |
+          while true; do
+            STATUS=$(curl -s http://localhost:3000/api/status)
+            echo "$STATUS"
+
+            RUNNING=$(echo "$STATUS" | jq -r '.stats.status')
+
+            if [ "$RUNNING" = "idle" ]; then
+              echo "Simulation complete."
+              break
+            fi
+
+            sleep 30
+          done
