@@ -8,7 +8,7 @@ on:
 jobs:
   simulate:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 360
 
     steps:
       - uses: actions/checkout@v4
@@ -29,20 +29,6 @@ jobs:
         run: |
           node server.js > server.log 2>&1 &
           sleep 10
-
-      - name: Configure simulator
-        run: |
-          curl -X POST http://localhost:3000/api/config \
-            -H "Content-Type: application/json" \
-            -d '{
-              "targetUrl":"https://your-site.com",
-              "totalVisits":100,
-              "concurrency":3,
-              "minDwellTime":10,
-              "maxDwellTime":30,
-              "referrers":["direct","google","facebook"],
-              "headless":true
-            }'
 
       - name: Start simulator
         run: |
