@@ -28,11 +28,26 @@ jobs:
       - name: Start server
         run: |
           node server.js > server.log 2>&1 &
-          sleep 10
+          echo "Waiting for server to be ready..."
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:3000/api/status > /dev/null 2>&1; then
+              echo "✅ Server is ready."
+              break
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 2
+          done
 
       - name: Start simulator
         run: |
-          curl -X POST http://localhost:3000/api/start
+          RESULT=$(curl -s -X POST http://localhost:3000/api/start)
+          echo "Start response: $RESULT"
+          STATUS=$(echo "$RESULT" | jq -r '.stats.status // empty' 2>/dev/null)
+          if [ "$STATUS" != "running" ]; then
+            echo "❌ Failed to start simulator. Response: $RESULT"
+            exit 1
+          fi
+          echo "✅ Simulator started."
 
       - name: Wait for simulation to complete
         shell: bash
@@ -45,7 +60,7 @@ jobs:
             FAILED=$(echo "$RESPONSE" | jq -r '.stats.visitsFailed // 0' 2>/dev/null)
             TOTAL=$(echo "$RESPONSE" | jq -r '.config.totalVisits // 0' 2>/dev/null)
             echo "[$(date -u '+%H:%M:%S')] Status: $STATUS | Completed: $COMPLETED | Failed: $FAILED | Total: $TOTAL"
-            if [ "$STATUS" = "idle" ]; then
+            if [ "$STATUS" = "idle" ] && [ "$COMPLETED" -gt 0 ]; then
               echo "✅ Simulation complete. Completed: $COMPLETED, Failed: $FAILED"
               break
             fi
