@@ -148,7 +148,7 @@ async function runWorker() {
     }
 
     browser = await puppeteer.launch({
-      executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      executablePath: process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
       headless: config.headless,
       args: ['--no-sandbox', '--disable-setuid-sandbox', ...proxyArgs]
     });
