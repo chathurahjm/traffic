@@ -1,0 +1,15 @@
+{
+  "name": "ga-traffic-simulator",
+  "version": "1.0.0",
+  "description": "Realistic traffic simulator for Google Analytics using Puppeteer",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "puppeteer-core": "^24.2.1",
+    "uuid": "^11.0.5"
+  }
+}

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GA4 Traffic Simulator Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="background-blur"></div>
+  <div class="container">
+    <header>
+      <div class="logo-area">
+        <div class="logo-icon"></div>
+        <h1>GA4 Traffic Simulator</h1>
+      </div>
+      <div id="status-badge" class="badge idle">Idle</div>
+    </header>
+
+    <main class="dashboard-grid">
+      <!-- Config Section -->
+      <section class="card config-card">
+        <h2>Simulation Settings</h2>
+        <form id="config-form">
+          <div class="form-group">
+            <label for="targetUrl">Target URL</label>
+            <input type="url" id="targetUrl" placeholder="https://example.com/page" required>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="totalVisits">Total Visits</label>
+              <input type="number" id="totalVisits" value="100" min="1">
+            </div>
+            <div class="form-group">
+              <label for="concurrency">Concurrency</label>
+              <input type="number" id="concurrency" value="3" min="1" max="10">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="minDwellTime">Min Dwell (sec)</label>
+              <input type="number" id="minDwellTime" value="10" min="5">
+            </div>
+            <div class="form-group">
+              <label for="maxDwellTime">Max Dwell (sec)</label>
+              <input type="number" id="maxDwellTime" value="30" min="5">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Referrer Mix</label>
+            <div class="referrer-checkboxes">
+              <label class="checkbox-container">
+                <input type="checkbox" name="referrers" value="direct" checked>
+                <span class="checkmark"></span> Direct
+              </label>
+              <label class="checkbox-container">
+                <input type="checkbox" name="referrers" value="google" checked>
+                <span class="checkmark"></span> Google
+              </label>
+              <label class="checkbox-container">
+                <input type="checkbox" name="referrers" value="facebook" checked>
+                <span class="checkmark"></span> Facebook
+              </label>
+              <label class="checkbox-container">
+                <input type="checkbox" name="referrers" value="twitter" checked>
+                <span class="checkmark"></span> Twitter
+              </label>
+              <label class="checkbox-container">
+                <input type="checkbox" name="referrers" value="linkedin" checked>
+                <span class="checkmark"></span> LinkedIn
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="proxies">Proxy Servers (one per line)</label>
+            <textarea id="proxies" rows="4" placeholder="e.g. 192.168.1.1:8080&#10;http://user:pass@192.168.1.2:1080" style="width: 100%; background: rgba(17, 24, 39, 0.6); border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 0.75rem; color: white; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; resize: vertical; outline: none; transition: border-color 0.2s ease;"></textarea>
+          </div>
+
+          <div class="form-group">
+            <label class="checkbox-container">
+              <input type="checkbox" id="headless" checked>
+              <span class="checkmark"></span> Headless Mode (Run in background)
+            </label>
+          </div>
+
+          <div class="actions">
+            <button type="submit" id="save-config-btn" class="btn btn-secondary">Apply Settings</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Stats Section -->
+      <section class="stats-container">
+        <!-- Controls Card -->
+        <div class="card controls-card">
+          <h2>Controls</h2>
+          <div class="control-buttons">
+            <button id="start-btn" class="btn btn-primary" disabled>Start Simulation</button>
+            <button id="pause-btn" class="btn btn-warning" disabled>Pause</button>
+            <button id="stop-btn" class="btn btn-danger" disabled>Stop / Reset</button>
+          </div>
+        </div>
+
+        <!-- Progress Card -->
+        <div class="card metrics-card">
+          <h2>Simulation Progress</h2>
+          <div class="progress-bar-container">
+            <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
+          </div>
+          <div class="progress-text">
+            <span id="progress-percent">0% Completed</span>
+            <span id="progress-fraction">0 / 0</span>
+          </div>
+
+          <div class="metrics-grid">
+            <div class="metric-box">
+              <span class="metric-label">Completed</span>
+              <span id="metric-completed" class="metric-value">0</span>
+            </div>
+            <div class="metric-box">
+              <span class="metric-label">Failed</span>
+              <span id="metric-failed" class="metric-value">0</span>
+            </div>
+            <div class="metric-box">
+              <span class="metric-label">Active Browsers</span>
+              <span id="metric-active" class="metric-value">0</span>
+            </div>
+            <div class="metric-box">
+              <span class="metric-label">Elapsed Time</span>
+              <span id="metric-time" class="metric-value">00:00:00</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Logs Section -->
+      <section class="card logs-card">
+        <h2>Live Simulator Log</h2>
+        <div id="log-console" class="log-console">
+          <div class="log-entry system-msg">Console ready. Apply settings to activate controls.</div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
