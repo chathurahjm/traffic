@@ -15,7 +15,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - uses: browser-actions/setup-chrome@v1
 
@@ -34,29 +34,22 @@ jobs:
         run: |
           curl -X POST http://localhost:3000/api/start
 
-      - name: Stream logs until completion
+      - name: Wait for simulation to complete
         shell: bash
         run: |
-          curl -s --no-buffer http://localhost:3000/api/stream | \
-          while IFS= read -r line; do
-            if [[ "$line" == data:* ]]; then
-              DATA="${line#data: }"
-
-              MSG=$(echo "$DATA" | jq -r '.message // empty' 2>/dev/null)
-              TYPE=$(echo "$DATA" | jq -r '.type // empty' 2>/dev/null)
-
-              if [ -n "$MSG" ]; then
-                echo "[$TYPE] $MSG"
-              fi
-
-              STATUS=$(echo "$DATA" | jq -r '.status // empty' 2>/dev/null)
-
-              if [ "$STATUS" = "idle" ]; then
-                echo "✅ Simulation complete."
-                pkill -f "curl.*api/stream" || true
-                break
-              fi
+          echo "Polling simulation status..."
+          while true; do
+            RESPONSE=$(curl -s http://localhost:3000/api/status)
+            STATUS=$(echo "$RESPONSE" | jq -r '.stats.status // empty' 2>/dev/null)
+            COMPLETED=$(echo "$RESPONSE" | jq -r '.stats.visitsCompleted // 0' 2>/dev/null)
+            FAILED=$(echo "$RESPONSE" | jq -r '.stats.visitsFailed // 0' 2>/dev/null)
+            TOTAL=$(echo "$RESPONSE" | jq -r '.config.totalVisits // 0' 2>/dev/null)
+            echo "[$(date -u '+%H:%M:%S')] Status: $STATUS | Completed: $COMPLETED | Failed: $FAILED | Total: $TOTAL"
+            if [ "$STATUS" = "idle" ]; then
+              echo "✅ Simulation complete. Completed: $COMPLETED, Failed: $FAILED"
+              break
             fi
+            sleep 30
           done
 
       - name: Show server log if failed
