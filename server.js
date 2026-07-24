@@ -203,9 +203,14 @@ async function runWorker() {
       addLog(`[Worker ${workerId}] Direct visit (no referrer)`, 'info');
     }
 
-    // Load Target URL
-    addLog(`[Worker ${workerId}] Navigating to ${config.targetUrl}`, 'info');
-    await page.goto(config.targetUrl, { waitUntil: 'networkidle2', timeout: 45000 });
+    // Load Target URL (pick from targetUrls array or single targetUrl)
+    const validUrls = (config.targetUrls && config.targetUrls.length > 0) 
+      ? config.targetUrls.filter(u => u && u.trim()) 
+      : [config.targetUrl];
+    const chosenUrl = validUrls[Math.floor(Math.random() * validUrls.length)] || config.targetUrl;
+
+    addLog(`[Worker ${workerId}] Navigating to ${chosenUrl}`, 'info');
+    await page.goto(chosenUrl, { waitUntil: 'networkidle2', timeout: 45000 });
     addLog(`[Worker ${workerId}] Page loaded successfully.`, 'success');
 
     // Handle Cookie Consent Banner if present

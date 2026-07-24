@@ -1,9 +1,12 @@
 {
+  "targetUrls": [
+    "https://www.spellmemorizer.com/"
+  ],
   "targetUrl": "https://www.spellmemorizer.com/",
-  "totalVisits": 100,
+  "totalVisits": 3000,
   "concurrency": 3,
-  "minDwellTime": 10,
-  "maxDwellTime": 30,
+  "minDwellTime": 12,
+  "maxDwellTime": 20,
   "referrers": [
     "direct",
     "google",
