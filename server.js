@@ -374,7 +374,8 @@ app.post('/api/config', (req, res) => {
 });
 
 app.post('/api/start', (req, res) => {
-  if (!config.targetUrl) {
+  const hasTarget = config.targetUrl || (Array.isArray(config.targetUrls) && config.targetUrls.some(u => u && u.trim()));
+  if (!hasTarget) {
     return res.status(400).json({ error: 'Simulator is not configured. Set configuration first.' });
   }
   
