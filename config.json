@@ -1,6 +1,7 @@
 {
   "targetUrls": [
-    "https://justpasteit.in/"
+    "https://justpasteit.in/",
+    "https://www.spellmemorizer.com/"
   ],
   "totalVisits": 3000,
   "concurrency": 3,
