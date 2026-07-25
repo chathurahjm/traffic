@@ -6,8 +6,21 @@ on:
   workflow_dispatch:
 
 jobs:
-  simulate:
+  select-os:
     runs-on: ubuntu-latest
+    outputs:
+      runner_os: ${{ steps.pick-os.outputs.runner_os }}
+    steps:
+      - id: pick-os
+        run: |
+          OS_LIST=("ubuntu-latest" "windows-latest")
+          SELECTED_OS=${OS_LIST[$RANDOM % ${#OS_LIST[@]}]}
+          echo "runner_os=$SELECTED_OS" >> $GITHUB_OUTPUT
+          echo "🎲 Randomly selected OS environment: $SELECTED_OS"
+
+  simulate:
+    needs: select-os
+    runs-on: ${{ needs.select-os.outputs.runner_os }}
     timeout-minutes: 360
 
     steps:
@@ -17,35 +30,59 @@ jobs:
         with:
           node-version: 20
 
-      - uses: browser-actions/setup-chrome@v1
-        id: setup-chrome
+      - name: Set up Chrome on Linux
+        if: runner.os == 'Linux'
+        uses: browser-actions/setup-chrome@v1
+        id: setup-chrome-linux
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Set Chrome Path
+      - name: Set Chrome Path (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
         run: |
-          CHROME_PATH="${{ steps.setup-chrome.outputs.chrome-path }}"
+          CHROME_PATH="${{ steps.setup-chrome-linux.outputs.chrome-path }}"
           if [ -z "$CHROME_PATH" ] || [ ! -f "$CHROME_PATH" ]; then
-            CHROME_PATH=$(which google-chrome || which google-chrome-stable || which chromium || which chromium-browser || echo "")
+            CHROME_PATH=$(which google-chrome || which google-chrome-stable || which chromium || echo "")
           fi
           echo "CHROME_BIN=$CHROME_PATH" >> $GITHUB_ENV
-          echo "✅ Using Chrome binary at: $CHROME_PATH"
+          echo "✅ [Linux] Using Chrome binary: $CHROME_PATH"
 
-      - name: Start server
+      - name: Set Chrome Path (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $chromePath = "C:\Program Files\Google\Chrome\Application\chrome.exe"
+          if (-not (Test-Path $chromePath)) {
+            $chromePath = "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
+          }
+          echo "CHROME_BIN=$chromePath" >> $env:GITHUB_ENV
+          Write-Host "✅ [Windows] Using Chrome binary: $chromePath"
+
+      - name: Start server (Linux)
+        if: runner.os == 'Linux'
         run: |
           node server.js > server.log 2>&1 &
-          echo "Waiting for server to be ready..."
+          echo "Waiting for server to start..."
           for i in $(seq 1 30); do
             if curl -s http://localhost:3000/api/status > /dev/null 2>&1; then
               echo "✅ Server is ready."
               break
             fi
-            echo "Waiting... ($i/30)"
             sleep 2
           done
 
+      - name: Start server (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          Start-Process -FilePath "node" -ArgumentList "server.js" -RedirectStandardOutput "server.log" -RedirectStandardError "server.log"
+          Start-Sleep -Seconds 5
+          Write-Host "✅ Server launched on Windows."
+
       - name: Start simulator
+        shell: bash
         run: |
           RESULT=$(curl -s -X POST http://localhost:3000/api/start)
           echo "Start response: $RESULT"

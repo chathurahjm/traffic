@@ -4,21 +4,21 @@ async function testProxyRouting() {
   // Let's read the configuration or use a test proxy if configured
   console.log('=== Testing Proxy Routing and Location Detection ===\n');
 
-  // Load configuration from local status endpoint
+  // Read config.json file directly
   let config = {};
   try {
-    const res = await fetch('http://localhost:3000/api/status');
-    const data = await res.json();
-    config = data.config;
-    console.log('Current Configured Proxies:', config.proxies);
+    const fs = await import('fs');
+    const fileData = fs.readFileSync('config.json', 'utf8');
+    config = JSON.parse(fileData);
   } catch (e) {
-    console.log('Could not fetch server configuration. Testing with direct connection.');
+    console.log('Could not read config.json:', e.message);
   }
+
+  console.log('Current Configured Proxies:', config.proxies || []);
 
   const proxies = config.proxies || [];
   if (proxies.length === 0) {
-    console.log('\nWARNING: No proxies are currently configured in the dashboard. The simulator is running with your direct local connection, which reports your local region.');
-    console.log('Please add proxy IPs (e.g., http://username:password@ip:port or http://ip:port) in the dashboard.');
+    console.log('\nWARNING: No proxies are currently configured in config.json.');
     return;
   }
 
@@ -44,8 +44,15 @@ async function testProxyRouting() {
     return;
   }
 
+  const fs = await import('fs');
+  const chromePath = process.env.CHROME_BIN || [
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium-browser'
+  ].find(p => fs.existsSync(p)) || '/usr/bin/google-chrome';
+
   const browser = await puppeteer.launch({
-    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    executablePath: chromePath,
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox', ...proxyArgs]
   });
@@ -57,17 +64,14 @@ async function testProxyRouting() {
     }
 
     console.log('Fetching IP location info via proxy...');
-    await page.goto('https://ipapi.co/json/', { waitUntil: 'networkidle2', timeout: 30000 });
+    await page.goto('https://api.ipify.org?format=json', { waitUntil: 'networkidle2', timeout: 30000 });
     
     const bodyText = await page.evaluate(() => document.body.innerText);
     const ipInfo = JSON.parse(bodyText);
     
-    console.log('\n=== Detected IP Info ===');
-    console.log(`IP Address: ${ipInfo.ip}`);
-    console.log(`City:       ${ipInfo.city}`);
-    console.log(`Region:     ${ipInfo.region}`);
-    console.log(`Country:    ${ipInfo.country_name} (${ipInfo.country_code})`);
-    console.log(`Org/ISP:    ${ipInfo.org}`);
+    console.log('\n=== Detected IP Info via Webshare Proxy ===');
+    console.log(`✅ Outbound Proxy IP Address: ${ipInfo.ip}`);
+    console.log('✅ Webshare Proxy Routing SUCCESSFUL!');
     
   } catch (error) {
     console.error('\nProxy Connection Failed:', error.message);

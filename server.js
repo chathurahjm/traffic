@@ -199,24 +199,27 @@ async function runWorker() {
     // Set User Agent
     await page.setUserAgent(userAgent);
 
-    // DevTools Geolocation & Timezone Emulation
+    // DevTools Geolocation, Timezone & Language Emulation
     const locationProfiles = [
-      { name: 'London, UK', timezone: 'Europe/London', lat: 51.5074, lng: -0.1278 },
-      { name: 'Tokyo, Japan', timezone: 'Asia/Tokyo', lat: 35.6762, lng: 139.6503 },
-      { name: 'New York, US', timezone: 'America/New_York', lat: 40.7128, lng: -74.0060 },
-      { name: 'Sydney, Australia', timezone: 'Australia/Sydney', lat: -33.8688, lng: 151.2093 },
-      { name: 'Paris, France', timezone: 'Europe/Paris', lat: 48.8566, lng: 2.3522 }
+      { name: 'New York, US', timezone: 'America/New_York', lat: 40.7128, lng: -74.0060, lang: 'en-US,en;q=0.9' },
+      { name: 'London, UK', timezone: 'Europe/London', lat: 51.5074, lng: -0.1278, lang: 'en-GB,en;q=0.9' },
+      { name: 'Tokyo, Japan', timezone: 'Asia/Tokyo', lat: 35.6762, lng: 139.6503, lang: 'ja-JP,ja;q=0.9,en-US;q=0.8' },
+      { name: 'Sydney, Australia', timezone: 'Australia/Sydney', lat: -33.8688, lng: 151.2093, lang: 'en-AU,en;q=0.9' },
+      { name: 'Paris, France', timezone: 'Europe/Paris', lat: 48.8566, lng: 2.3522, lang: 'fr-FR,fr;q=0.9,en-US;q=0.8' },
+      { name: 'Berlin, Germany', timezone: 'Europe/Berlin', lat: 52.5200, lng: 13.4050, lang: 'de-DE,de;q=0.9,en-US;q=0.8' },
+      { name: 'Toronto, Canada', timezone: 'America/Toronto', lat: 43.6532, lng: -79.3832, lang: 'en-CA,en;q=0.9' }
     ];
     const targetLoc = locationProfiles[Math.floor(Math.random() * locationProfiles.length)];
     try {
       await page.emulateTimezone(targetLoc.timezone);
+      await page.setExtraHTTPHeaders({ 'Accept-Language': targetLoc.lang });
       const cdpSession = await page.target().createCDPSession();
       await cdpSession.send('Emulation.setGeolocationOverride', {
         latitude: targetLoc.lat,
         longitude: targetLoc.lng,
         accuracy: 100
       });
-      addLog(`[Worker ${workerId}] Emulating location/timezone: ${targetLoc.name} (${targetLoc.timezone})`, 'info');
+      addLog(`[Worker ${workerId}] Emulating location profile: ${targetLoc.name} (${targetLoc.timezone})`, 'info');
     } catch (locErr) {
       addLog(`[Worker ${workerId}] Could not set location emulation: ${locErr.message}`, 'warning');
     }

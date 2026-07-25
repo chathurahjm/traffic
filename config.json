@@ -15,5 +15,7 @@
     "linkedin"
   ],
   "headless": true,
-  "proxies": []
+  "proxies": [
+    "http://qmypqysy:213d7n6jj0s9@31.59.20.176:6754"
+  ]
 }
