@@ -47,6 +47,27 @@ function saveConfigToFile() {
   }
 }
 
+function getChromeExecutablePath() {
+  const envPath = process.env.CHROME_BIN || process.env.PUPPETEER_EXECUTABLE_PATH;
+  if (envPath && fs.existsSync(envPath)) return envPath;
+
+  const candidates = [
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+
+  return envPath || '/usr/bin/google-chrome';
+}
+
 let stats = {
   status: 'idle', // idle, running, paused, stopped
   visitsCompleted: 0,
@@ -147,10 +168,20 @@ async function runWorker() {
       }
     }
 
+    const chromePath = getChromeExecutablePath();
     browser = await puppeteer.launch({
-      executablePath: process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      executablePath: chromePath,
       headless: config.headless,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', ...proxyArgs]
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--disable-gpu',
+        '--no-first-run',
+        '--no-zygote',
+        ...proxyArgs
+      ]
     });
 
     const context = await browser.createBrowserContext();
@@ -352,23 +383,30 @@ function stopSimulation() {
 
 // REST API Endpoints
 app.post('/api/config', (req, res) => {
-  const { targetUrl, totalVisits, concurrency, minDwellTime, maxDwellTime, referrers, headless, proxies } = req.body;
-  if (!targetUrl) {
-    return res.status(400).json({ error: 'targetUrl is required' });
+  const { targetUrl, targetUrls, totalVisits, concurrency, minDwellTime, maxDwellTime, referrers, headless, proxies } = req.body;
+  
+  const parsedUrls = Array.isArray(targetUrls) 
+    ? targetUrls.filter(u => u && u.trim()) 
+    : (targetUrl ? [targetUrl] : (config.targetUrls || []));
+
+  if (parsedUrls.length === 0 && !targetUrl) {
+    return res.status(400).json({ error: 'At least one target URL is required' });
   }
 
   config = {
-    targetUrl,
-    totalVisits: parseInt(totalVisits) || 100,
-    concurrency: parseInt(concurrency) || 3,
-    minDwellTime: parseInt(minDwellTime) || 10,
-    maxDwellTime: parseInt(maxDwellTime) || 30,
-    referrers: referrers || ['direct'],
-    headless: headless !== undefined ? headless : true,
-    proxies: Array.isArray(proxies) ? proxies.filter(p => p && p.trim()) : []
+    ...config,
+    targetUrl: targetUrl || parsedUrls[0] || '',
+    targetUrls: parsedUrls,
+    totalVisits: parseInt(totalVisits) || config.totalVisits || 100,
+    concurrency: parseInt(concurrency) || config.concurrency || 3,
+    minDwellTime: parseInt(minDwellTime) || config.minDwellTime || 10,
+    maxDwellTime: parseInt(maxDwellTime) || config.maxDwellTime || 30,
+    referrers: referrers || config.referrers,
+    headless: headless !== undefined ? headless : config.headless,
+    proxies: Array.isArray(proxies) ? proxies.filter(p => p && p.trim()) : config.proxies
   };
 
-  addLog(`Configuration updated. Target: ${config.targetUrl}`, 'info');
+  addLog(`Configuration updated. Target URLs (${config.targetUrls.length}): ${config.targetUrls.join(', ')}`, 'info');
   saveConfigToFile();
   res.json({ success: true, config });
 });

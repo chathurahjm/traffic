@@ -15,15 +15,22 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 20
 
       - uses: browser-actions/setup-chrome@v1
+        id: setup-chrome
 
       - name: Install dependencies
         run: npm ci
 
       - name: Set Chrome Path
-        run: echo "CHROME_BIN=$(which google-chrome)" >> $GITHUB_ENV
+        run: |
+          CHROME_PATH="${{ steps.setup-chrome.outputs.chrome-path }}"
+          if [ -z "$CHROME_PATH" ] || [ ! -f "$CHROME_PATH" ]; then
+            CHROME_PATH=$(which google-chrome || which google-chrome-stable || which chromium || which chromium-browser || echo "")
+          fi
+          echo "CHROME_BIN=$CHROME_PATH" >> $GITHUB_ENV
+          echo "✅ Using Chrome binary at: $CHROME_PATH"
 
       - name: Start server
         run: |
@@ -45,6 +52,7 @@ jobs:
           STATUS=$(echo "$RESULT" | jq -r '.stats.status // empty' 2>/dev/null)
           if [ "$STATUS" != "running" ]; then
             echo "❌ Failed to start simulator. Response: $RESULT"
+            cat server.log
             exit 1
           fi
           echo "✅ Simulator started."
@@ -60,13 +68,20 @@ jobs:
             FAILED=$(echo "$RESPONSE" | jq -r '.stats.visitsFailed // 0' 2>/dev/null)
             TOTAL=$(echo "$RESPONSE" | jq -r '.config.totalVisits // 0' 2>/dev/null)
             echo "[$(date -u '+%H:%M:%S')] Status: $STATUS | Completed: $COMPLETED | Failed: $FAILED | Total: $TOTAL"
-            if [ "$STATUS" = "idle" ] && [ "$COMPLETED" -gt 0 ]; then
-              echo "✅ Simulation complete. Completed: $COMPLETED, Failed: $FAILED"
-              break
+            
+            if [ "$STATUS" = "idle" ]; then
+              if [ "$COMPLETED" -gt 0 ]; then
+                echo "✅ Simulation complete. Completed: $COMPLETED, Failed: $FAILED"
+                break
+              else
+                echo "❌ Simulation finished with 0 completed visits ($FAILED failed)."
+                cat server.log
+                exit 1
+              fi
             fi
-            sleep 30
+            sleep 15
           done
 
-      - name: Show server log if failed
+      - name: Show server log on failure
         if: failure()
         run: cat server.log
