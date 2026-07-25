@@ -221,14 +221,56 @@ async function runWorker() {
       addLog(`[Worker ${workerId}] Could not set location emulation: ${locErr.message}`, 'warning');
     }
 
-    // Spoof Referrer via document.referrer
-    if (referrer) {
-      await page.evaluateOnNewDocument((ref) => {
+    // Stealth Evasion Script to bypass Google Analytics & Cloudflare Bot Detection
+    await page.evaluateOnNewDocument((ref) => {
+      // 1. Override navigator.webdriver (CRITICAL: GA4 silently discards hits when webdriver === true)
+      Object.defineProperty(navigator, 'webdriver', { get: () => false });
+
+      // 2. Mock plugins array
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [
+          { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
+          { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefoxmcalj' },
+          { name: 'Native Client', filename: 'internal-nacl-plugin' }
+        ]
+      });
+
+      // 3. Mock languages
+      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+
+      // 4. Mock window.chrome
+      window.chrome = { runtime: {} };
+
+      // 5. Mock referrer if provided
+      if (ref) {
         Object.defineProperty(document, 'referrer', {
           get: () => ref,
           configurable: true
         });
-      }, referrer);
+      }
+    }, referrer);
+
+    // Set realistic Desktop Viewport
+    await page.setViewport({
+      width: 1920,
+      height: 1080,
+      deviceScaleFactor: 1,
+      hasTouch: false,
+      isLandscape: true,
+      isMobile: false
+    });
+
+    // Detect Google Analytics collection requests
+    let gaHitDetected = false;
+    page.on('request', req => {
+      const reqUrl = req.url();
+      if (reqUrl.includes('google-analytics.com') || reqUrl.includes('analytics.google.com') || reqUrl.includes('/g/collect')) {
+        gaHitDetected = true;
+        addLog(`[Worker ${workerId}] 🎯 GA Network Hit Detected: ${reqUrl.split('?')[0]}`, 'success');
+      }
+    });
+
+    if (referrer) {
       addLog(`[Worker ${workerId}] Spoofing referrer: ${referrerType} (${referrer})`, 'info');
     } else {
       addLog(`[Worker ${workerId}] Direct visit (no referrer)`, 'info');
@@ -240,9 +282,21 @@ async function runWorker() {
       : [config.targetUrl];
     const chosenUrl = validUrls[Math.floor(Math.random() * validUrls.length)] || config.targetUrl;
 
+    const gotoOptions = { waitUntil: 'networkidle2', timeout: 45000 };
+    if (referrer) {
+      gotoOptions.referrer = referrer;
+    }
+
     addLog(`[Worker ${workerId}] Navigating to ${chosenUrl}`, 'info');
-    await page.goto(chosenUrl, { waitUntil: 'networkidle2', timeout: 45000 });
+    await page.goto(chosenUrl, gotoOptions);
     addLog(`[Worker ${workerId}] Page loaded successfully.`, 'success');
+
+    // Simulate realistic mouse movements
+    try {
+      await page.mouse.move(200, 300);
+      await page.mouse.move(500, 400);
+      await page.mouse.move(300, 600);
+    } catch (mErr) {}
 
     // Handle Cookie Consent Banner if present
     addLog(`[Worker ${workerId}] Checking for cookie consent banner...`, 'info');
