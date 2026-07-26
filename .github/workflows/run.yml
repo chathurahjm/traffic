@@ -38,6 +38,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Fetch and test live proxies
+        run: node fetch_proxies.js
+
       - name: Set Chrome Path (Linux)
         if: runner.os == 'Linux'
         shell: bash
