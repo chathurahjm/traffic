@@ -1,8 +1,5 @@
 {
-  "targetUrls": [
-    "https://justpasteit.in/",
-    "https://www.spellmemorizer.com/"
-  ],
+  "targetUrl": "https://www.spellmemorizer.com/",
   "totalVisits": 3000,
   "concurrency": 3,
   "minDwellTime": 12,
@@ -16,9 +13,10 @@
   ],
   "headless": true,
   "proxies": [
+    "socks5://127.0.0.1:9050",
     "http://39.106.192.29:8443",
+    "http://120.55.240.71:8647",
     "http://101.132.222.120:80",
-    "http://45.186.6.104:3128",
     "http://47.91.65.23:3128",
     "http://8.209.255.13:3128",
     "http://47.243.92.199:3128",
@@ -29,11 +27,13 @@
     "http://113.204.79.230:9091",
     "http://47.91.104.88:3128",
     "http://20.204.43.57:80",
-    "http://101.251.204.174:8080",
     "http://65.108.159.129:999",
     "http://65.108.159.129:4145",
     "http://61.158.175.38:9002",
     "http://65.108.159.129:3128",
     "http://65.108.159.129:5153"
+  ],
+  "targetUrls": [
+    "https://www.spellmemorizer.com/"
   ]
 }

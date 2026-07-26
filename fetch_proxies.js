@@ -8,6 +8,28 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const CONFIG_PATH = path.join(__dirname, 'config.json');
 
+// Check if local TOR SOCKS5 proxy is active
+function checkTorProxy() {
+  return new Promise((resolve) => {
+    const req = http.request({
+      host: '127.0.0.1',
+      port: 9050,
+      method: 'CONNECT',
+      path: 'api.ipify.org:80',
+      timeout: 3000
+    });
+
+    req.on('connect', (res, socket) => {
+      socket.destroy();
+      resolve(true);
+    });
+
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+    req.end();
+  });
+}
+
 // Fetch HTML content from URL
 function fetchPage(urlStr) {
   return new Promise((resolve) => {
@@ -37,15 +59,8 @@ function testProxy(proxyUrl) {
         resolve({ proxy: proxyUrl, working: true });
       });
 
-      req.on('error', (err) => {
-        resolve({ proxy: proxyUrl, working: false });
-      });
-
-      req.on('timeout', () => {
-        req.destroy();
-        resolve({ proxy: proxyUrl, working: false });
-      });
-
+      req.on('error', () => resolve({ proxy: proxyUrl, working: false }));
+      req.on('timeout', () => { req.destroy(); resolve({ proxy: proxyUrl, working: false }); });
       req.end();
     } catch (e) {
       resolve({ proxy: proxyUrl, working: false });
@@ -54,10 +69,19 @@ function testProxy(proxyUrl) {
 }
 
 async function main() {
-  console.log('🔄 Fetching fresh proxy list from ProxyDB...');
+  const workingProxies = [];
+
+  // 1. First check if TOR SOCKS5 Proxy is running locally (e.g. 127.0.0.1:9050)
+  const isTorActive = await checkTorProxy();
+  if (isTorActive) {
+    console.log('🧅 Local TOR SOCKS5 proxy detected on 127.0.0.1:9050');
+    workingProxies.push('socks5://127.0.0.1:9050');
+  }
+
+  // 2. Fetch extra fresh proxies from ProxyDB
+  console.log('🔄 Fetching proxy list from ProxyDB...');
   const html = await fetchPage('https://proxydb.net/?protocol=http&protocol=https&country=');
 
-  // Extract IP:Port patterns from HTML table
   const candidates = [];
   const regex = /\/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\/(\d+)/g;
   let match;
@@ -68,18 +92,15 @@ async function main() {
   }
 
   const uniqueCandidates = [...new Set(candidates)];
-  console.log(`Found ${uniqueCandidates.length} candidate proxies. Testing connectivity...`);
-
-  const workingProxies = [];
   for (const proxy of uniqueCandidates) {
     const res = await testProxy(proxy);
     if (res.working) {
-      console.log(`  ✅ Working proxy: ${proxy}`);
+      console.log(`  ✅ Verified active proxy: ${proxy}`);
       workingProxies.push(proxy);
     }
   }
 
-  console.log(`\nVerified ${workingProxies.length} active proxies.`);
+  console.log(`\nVerified ${workingProxies.length} total active proxies (including TOR).`);
 
   // Load existing config.json
   let config = {};
@@ -89,18 +110,17 @@ async function main() {
     } catch (e) {}
   }
 
-  // Update proxies list in config.json
   config.proxies = workingProxies;
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8');
 
   if (workingProxies.length > 0) {
-    console.log(`✅ Dynamically configured ${workingProxies.length} active proxies in config.json.`);
+    console.log(`✅ Configured ${workingProxies.length} proxies in config.json:`, workingProxies);
   } else {
-    console.log('⚠️ No active public proxies found. Falling back to direct connection (proxies: []).');
+    console.log('⚠️ No active proxies found. Falling back to direct connection (proxies: []).');
   }
 }
 
 main().catch(err => {
-  console.error('Proxy fetch failed:', err.message);
-  process.exit(0); // Exit cleanly to prevent blocking workflow
+  console.error('Proxy setup failed:', err.message);
+  process.exit(0);
 });
