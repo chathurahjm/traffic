@@ -149,6 +149,17 @@ async function main() {
   // Update config.json
   existingConfig.proxies = finalProxies;
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(existingConfig, null, 2), 'utf8');
+
+  // Also update search_config.json if it exists
+  const SEARCH_CONFIG_PATH = path.join(__dirname, 'search_config.json');
+  if (fs.existsSync(SEARCH_CONFIG_PATH)) {
+    try {
+      const searchConfig = JSON.parse(fs.readFileSync(SEARCH_CONFIG_PATH, 'utf8'));
+      searchConfig.proxies = finalProxies;
+      fs.writeFileSync(SEARCH_CONFIG_PATH, JSON.stringify(searchConfig, null, 2), 'utf8');
+      console.log(`💾 Also updated ${finalProxies.length} proxies to search_config.json.`);
+    } catch (e) {}
+  }
 }
 
 main().catch(err => {

@@ -35,12 +35,15 @@ if (fs.existsSync(SEARCH_CONFIG_PATH)) {
   }
 }
 
-// Fallback proxies from config.json if search config proxies is empty
-if ((!config.proxies || config.proxies.length === 0) && fs.existsSync(GENERAL_CONFIG_PATH)) {
+// Combine proxies from config.json if available
+if (process.env.DISABLE_PROXIES === 'true') {
+  config.proxies = [];
+} else if (fs.existsSync(GENERAL_CONFIG_PATH)) {
   try {
     const generalData = JSON.parse(fs.readFileSync(GENERAL_CONFIG_PATH, 'utf8'));
     if (generalData.proxies && generalData.proxies.length > 0) {
-      config.proxies = generalData.proxies;
+      const combined = [...(config.proxies || []), ...generalData.proxies];
+      config.proxies = Array.from(new Set(combined.filter(p => p && p.trim())));
     }
   } catch (e) {}
 }
@@ -187,6 +190,16 @@ async function runWorker(workerIndex) {
       hasTouch: false,
       isLandscape: true,
       isMobile: false
+    });
+
+    // Detect Google Analytics collection requests
+    let gaHitDetected = false;
+    page.on('request', req => {
+      const reqUrl = req.url();
+      if (reqUrl.includes('google-analytics.com') || reqUrl.includes('analytics.google.com') || reqUrl.includes('/g/collect')) {
+        gaHitDetected = true;
+        log(`[${workerId}] 🎯 GA Network Hit Detected: ${reqUrl.split('?')[0]}`, 'SUCCESS');
+      }
     });
 
     // 1. Navigate to Google Search

@@ -9,7 +9,5 @@
   "minDwellTime": 15,
   "maxDwellTime": 30,
   "headless": true,
-  "proxies": [
-    "socks5://127.0.0.1:9050"
-  ]
+  "proxies": []
 }
