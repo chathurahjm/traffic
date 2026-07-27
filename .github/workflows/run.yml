@@ -6,21 +6,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  select-os:
-    runs-on: ubuntu-latest
-    outputs:
-      runner_os: ${{ steps.pick-os.outputs.runner_os }}
-    steps:
-      - id: pick-os
-        run: |
-          OS_LIST=("ubuntu-latest" "windows-latest")
-          SELECTED_OS=${OS_LIST[$RANDOM % ${#OS_LIST[@]}]}
-          echo "runner_os=$SELECTED_OS" >> $GITHUB_OUTPUT
-          echo "🎲 Randomly selected OS environment: $SELECTED_OS"
-
   simulate:
-    needs: select-os
-    runs-on: ${{ needs.select-os.outputs.runner_os }}
+    runs-on: ubuntu-latest
     timeout-minutes: 360
 
     steps:
@@ -28,19 +15,16 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
-      - name: Set up Chrome (Linux)
-        if: runner.os == 'Linux'
+      - name: Set up Chrome
         uses: browser-actions/setup-chrome@v1
-        id: setup-chrome-linux
+        id: setup-chrome
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Install and start TOR service (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
+      - name: Install and start TOR service
         run: |
           sudo apt-get update && sudo apt-get install -y tor
           sudo service tor start
@@ -50,64 +34,30 @@ jobs:
       - name: Fetch and test live proxies
         run: node fetch_proxies.js
 
-      - name: Set Chrome Path (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
+      - name: Set Chrome Path
         run: |
-          CHROME_PATH="${{ steps.setup-chrome-linux.outputs.chrome-path }}"
+          CHROME_PATH="${{ steps.setup-chrome.outputs.chrome-path }}"
           if [ -z "$CHROME_PATH" ] || [ ! -f "$CHROME_PATH" ]; then
             CHROME_PATH=$(which google-chrome || which google-chrome-stable || which chromium || echo "")
           fi
           echo "CHROME_BIN=$CHROME_PATH" >> $GITHUB_ENV
-          echo "✅ [Linux] Using Chrome binary: $CHROME_PATH"
+          echo "✅ Using Chrome binary: $CHROME_PATH"
 
-      - name: Set Chrome Path (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $chromePath = "C:\Program Files\Google\Chrome\Application\chrome.exe"
-          if (-not (Test-Path $chromePath)) {
-            $chromePath = "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
-          }
-          echo "CHROME_BIN=$chromePath" >> $env:GITHUB_ENV
-          Write-Host "✅ [Windows] Using Chrome binary: $chromePath"
-
-      - name: Start server (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
+      - name: Start server
         run: |
           node server.js > server.log 2>&1 &
           echo "Waiting for server to start..."
           for i in $(seq 1 30); do
-            if curl -s http://localhost:3000/api/status > /dev/null 2>&1; then
+            if curl -s http://127.0.0.1:3000/api/status > /dev/null 2>&1; then
               echo "✅ Server is ready."
               break
             fi
             sleep 2
           done
 
-      - name: Start server (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          Start-Process -FilePath "node" -ArgumentList "server.js" -RedirectStandardOutput "server.log" -RedirectStandardError "server_err.log"
-          Start-Sleep -Seconds 5
-          for ($i=1; $i -le 30; $i++) {
-            try {
-              $resp = Invoke-RestMethod -Uri "http://localhost:3000/api/status" -TimeoutSec 2
-              if ($resp) {
-                Write-Host "✅ Server is ready on Windows."
-                break
-              }
-            } catch {
-              Start-Sleep -Seconds 2
-            }
-          }
-
       - name: Start simulator
-        shell: bash
         run: |
-          RESULT=$(curl -s -X POST http://localhost:3000/api/start)
+          RESULT=$(curl -s -X POST http://127.0.0.1:3000/api/start)
           echo "Start response: $RESULT"
           STATUS=$(echo "$RESULT" | jq -r '.stats.status // empty' 2>/dev/null)
           if [ "$STATUS" != "running" ]; then
@@ -119,11 +69,10 @@ jobs:
           echo "✅ Simulator started."
 
       - name: Wait for simulation to complete
-        shell: bash
         run: |
           echo "Polling simulation status..."
           while true; do
-            RESPONSE=$(curl -s http://localhost:3000/api/status)
+            RESPONSE=$(curl -s http://127.0.0.1:3000/api/status)
             STATUS=$(echo "$RESPONSE" | jq -r '.stats.status // empty' 2>/dev/null)
             COMPLETED=$(echo "$RESPONSE" | jq -r '.stats.visitsCompleted // 0' 2>/dev/null)
             FAILED=$(echo "$RESPONSE" | jq -r '.stats.visitsFailed // 0' 2>/dev/null)
@@ -146,7 +95,6 @@ jobs:
 
       - name: Show server log on failure
         if: failure()
-        shell: bash
         run: |
           if [ -f server.log ]; then
             echo "=== SERVER LOG ==="
