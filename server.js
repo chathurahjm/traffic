@@ -184,10 +184,14 @@ async function runWorker() {
       ]
     });
 
+    const validUrls = (config.targetUrls && config.targetUrls.length > 0) 
+      ? config.targetUrls.filter(u => u && u.trim()) 
+      : (config.targetUrl ? [config.targetUrl] : []);
+
     const context = await browser.createBrowserContext();
-    if (config.targetUrl) {
+    for (const urlStr of validUrls) {
       try {
-        await context.overridePermissions(config.targetUrl, ['geolocation']);
+        await context.overridePermissions(urlStr, ['geolocation']);
       } catch (pErr) {}
     }
     const page = await context.newPage();
@@ -280,19 +284,20 @@ async function runWorker() {
     }
 
     // Load Target URL (pick from targetUrls array or single targetUrl)
-    const validUrls = (config.targetUrls && config.targetUrls.length > 0) 
-      ? config.targetUrls.filter(u => u && u.trim()) 
-      : [config.targetUrl];
-    const chosenUrl = validUrls[Math.floor(Math.random() * validUrls.length)] || config.targetUrl;
+    const chosenUrl = validUrls.length > 0
+      ? validUrls[Math.floor(Math.random() * validUrls.length)]
+      : config.targetUrl;
 
-    const gotoOptions = { waitUntil: 'networkidle2', timeout: 45000 };
+    const gotoOptions = { waitUntil: 'domcontentloaded', timeout: 30000 };
     if (referrer) {
       gotoOptions.referrer = referrer;
     }
 
-    addLog(`[Worker ${workerId}] Navigating to ${chosenUrl}`, 'info');
+    addLog(`[Worker ${workerId}] Navigating to target: ${chosenUrl}`, 'info');
     await page.goto(chosenUrl, gotoOptions);
-    addLog(`[Worker ${workerId}] Page loaded successfully.`, 'success');
+    // Allow scripts / GA on SPA pages to settle
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    addLog(`[Worker ${workerId}] Page loaded successfully for ${chosenUrl}`, 'success');
 
     // Simulate realistic mouse movements
     try {
@@ -375,7 +380,7 @@ async function runWorker() {
     if (clickedInternal) {
       addLog(`[Worker ${workerId}] Navigated to internal link to boost session engagement.`, 'success');
       // Wait for secondary page load and dwell
-      await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 }).catch(() => {});
+      await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
       await new Promise(resolve => setTimeout(resolve, (dwellTime / 2) * 1000));
     } else {
       addLog(`[Worker ${workerId}] No internal links found. Staying on home page.`, 'info');
