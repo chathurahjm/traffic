@@ -1,0 +1,78 @@
+name: Organic Google Search Traffic Simulation
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Runs every 6 hours automatically
+  workflow_dispatch:
+    inputs:
+      keyword:
+        description: 'Google Search Keyword'
+        required: false
+        default: 'just paste it'
+      target_domain:
+        description: 'Target Domain to Find & Click'
+        required: false
+        default: 'justpasteit.in'
+      target_url:
+        description: 'Target Landing Page URL'
+        required: false
+        default: 'http://justpasteit.in/'
+      visits:
+        description: 'Total Visits Goal'
+        required: false
+        default: '20'
+      concurrency:
+        description: 'Parallel Worker Count'
+        required: false
+        default: '2'
+
+jobs:
+  run-organic-search-traffic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Chrome Browser
+        uses: browser-actions/setup-chrome@v1
+        id: setup-chrome
+
+      - name: Install Node Dependencies
+        run: npm ci
+
+      - name: Install & Start TOR Service (SOCKS5 Proxy)
+        run: |
+          sudo apt-get update && sudo apt-get install -y tor
+          sudo service tor start
+          sleep 5
+          echo "🧅 TOR SOCKS5 active on 127.0.0.1:9050"
+
+      - name: Fetch Live Proxies (Optional Fallback)
+        run: node fetch_proxies.js || true
+
+      - name: Configure Chrome Binary Path
+        run: |
+          CHROME_PATH="${{ steps.setup-chrome.outputs.chrome-path }}"
+          if [ -z "$CHROME_PATH" ] || [ ! -f "$CHROME_PATH" ]; then
+            CHROME_PATH=$(which google-chrome || which google-chrome-stable || which chromium || echo "")
+          fi
+          echo "CHROME_BIN=$CHROME_PATH" >> $GITHUB_ENV
+          echo "✅ Configured Chrome Binary: $CHROME_PATH"
+
+      - name: Execute Organic Search Traffic Runner
+        env:
+          SEARCH_KEYWORD: ${{ github.event.inputs.keyword || 'just paste it' }}
+          TARGET_DOMAIN: ${{ github.event.inputs.target_domain || 'justpasteit.in' }}
+          TARGET_URL: ${{ github.event.inputs.target_url || 'http://justpasteit.in/' }}
+          TOTAL_VISITS: ${{ github.event.inputs.visits || '20' }}
+          CONCURRENCY: ${{ github.event.inputs.concurrency || '2' }}
+          HEADLESS: 'true'
+        run: |
+          node search_runner.js

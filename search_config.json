@@ -1,0 +1,15 @@
+{
+  "searchEngine": "https://www.google.com",
+  "searchKeyword": "just paste it",
+  "targetDomain": "justpaste",
+  "targetUrl": "http://justpasteit.in/",
+  "maxSerpPages": 3,
+  "totalVisits": 100,
+  "concurrency": 2,
+  "minDwellTime": 15,
+  "maxDwellTime": 30,
+  "headless": true,
+  "proxies": [
+    "socks5://127.0.0.1:9050"
+  ]
+}
