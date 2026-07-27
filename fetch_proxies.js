@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 const CONFIG_PATH = path.join(__dirname, 'config.json');
 
 const SOCKS5_SOURCES = [
-  'https://api.proxyscrape.com/v2/?request=displayproxies&protocol=socks5&timeout=3000&country=all',
+  'https://api.proxyscrape.com/v2/?request=displayproxies&protocol=socks5&timeout=1500&country=all',
   'https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks5.txt',
   'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks5.txt',
   'https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt'
@@ -17,28 +17,29 @@ const SOCKS5_SOURCES = [
 
 function checkTorProxy() {
   return new Promise((resolve) => {
+    const start = Date.now();
     const req = http.request({
       host: '127.0.0.1',
       port: 9050,
       method: 'CONNECT',
-      path: 'api.ipify.org:80',
-      timeout: 2500
+      path: '1.1.1.1:80',
+      timeout: 1000
     });
 
     req.on('connect', (res, socket) => {
       socket.destroy();
-      resolve(true);
+      resolve({ working: true, latency: Date.now() - start });
     });
 
-    req.on('error', () => resolve(false));
-    req.on('timeout', () => { req.destroy(); resolve(false); });
+    req.on('error', () => resolve({ working: false, latency: Infinity }));
+    req.on('timeout', () => { req.destroy(); resolve({ working: false, latency: Infinity }); });
     req.end();
   });
 }
 
 function fetchText(urlStr) {
   return new Promise((resolve) => {
-    https.get(urlStr, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 6000 }, (res) => {
+    https.get(urlStr, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 4000 }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => resolve(data));
@@ -46,47 +47,69 @@ function fetchText(urlStr) {
   });
 }
 
-function testProxy(proxyUrl) {
+// Optimized proxy tester: strict 800ms threshold + latency measurement
+function testProxy(proxyUrl, timeoutMs = 800) {
   return new Promise((resolve) => {
+    const start = Date.now();
     try {
       const url = new URL(proxyUrl);
       const req = http.request({
         host: url.hostname,
         port: url.port,
         method: 'CONNECT',
-        path: 'httpbin.org:80',
-        timeout: 3000
+        path: '1.1.1.1:80',
+        timeout: timeoutMs
       });
 
       req.on('connect', (res, socket) => {
+        const latency = Date.now() - start;
         socket.destroy();
-        resolve({ proxy: proxyUrl, working: true });
+        resolve({ proxy: proxyUrl, working: true, latency });
       });
 
-      req.on('error', () => resolve({ proxy: proxyUrl, working: false }));
-      req.on('timeout', () => { req.destroy(); resolve({ proxy: proxyUrl, working: false }); });
+      req.on('error', () => resolve({ proxy: proxyUrl, working: false, latency: Infinity }));
+      req.on('timeout', () => { req.destroy(); resolve({ proxy: proxyUrl, working: false, latency: Infinity }); });
       req.end();
     } catch (e) {
-      resolve({ proxy: proxyUrl, working: false });
+      resolve({ proxy: proxyUrl, working: false, latency: Infinity });
     }
   });
 }
 
 async function main() {
-  console.log('🔄 Option 2: Dynamically Aggregating Free SOCKS5 & Public Proxy APIs...');
+  console.log('⚡ Running Optimized Free Public Proxy Filter (High-Concurrency Parallel Scan)...');
   const workingProxies = [];
 
-  // 1. Check TOR Local Proxy first
-  const isTorActive = await checkTorProxy();
-  if (isTorActive) {
-    console.log('🧅 Local TOR SOCKS5 proxy active (socks5://127.0.0.1:9050)');
+  // Read current config to preserve any custom authenticated proxies
+  let existingConfig = {};
+  let customProxies = [];
+  if (fs.existsSync(CONFIG_PATH)) {
+    try {
+      existingConfig = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+      if (Array.isArray(existingConfig.proxies)) {
+        customProxies = existingConfig.proxies.filter(p => p && p.includes('@')); // user:pass authenticated proxies
+      }
+    } catch (e) {}
+  }
+
+  if (customProxies.length > 0) {
+    console.log(`🔑 Preserved ${customProxies.length} authenticated proxy credentials.`);
+    workingProxies.push(...customProxies);
+  }
+
+  // 1. Check local TOR proxy first
+  const torStatus = await checkTorProxy();
+  if (torStatus.working) {
+    console.log(`🧅 Local TOR SOCKS5 proxy active (${torStatus.latency}ms latency)`);
     workingProxies.push('socks5://127.0.0.1:9050');
   }
 
-  // 2. Aggregate candidate SOCKS5 list from APIs
+  // 2. Fetch candidate public SOCKS5 lists in parallel
+  console.log('📡 Fetching fresh public proxy sources...');
+  const sourceResults = await Promise.all(SOCKS5_SOURCES.map(fetchText));
+  
   const candidateSet = new Set();
-  for (const src of SOCKS5_SOURCES) {
-    const text = await fetchText(src);
+  for (const text of sourceResults) {
     const lines = text.split(/\r?\n/);
     for (const line of lines) {
       const trimmed = line.trim();
@@ -97,37 +120,38 @@ async function main() {
   }
 
   const candidates = Array.from(candidateSet);
-  console.log(`Fetched ${candidates.length} SOCKS5 candidates across APIs. Testing responsiveness in parallel...`);
+  console.log(`🔍 Fetched ${candidates.length} total candidates. Testing top 100 in parallel (strict 800ms cap)...`);
 
-  // Test top 60 candidates in parallel batches of 15
-  const sample = candidates.slice(0, 60);
-  for (let i = 0; i < sample.length; i += 15) {
-    const batch = sample.slice(i, i + 15);
-    const results = await Promise.all(batch.map(p => testProxy(p)));
-    for (const r of results) {
-      if (r.working && !workingProxies.includes(r.proxy)) {
-        console.log(`  ✅ Active SOCKS5 Proxy: ${r.proxy}`);
-        workingProxies.push(r.proxy);
-      }
+  // 3. Test top 100 candidate proxies in 2 parallel waves of 50
+  const sample = candidates.slice(0, 100);
+  const startTime = Date.now();
+  const testResults = await Promise.all(sample.map(p => testProxy(p, 800)));
+  const scanDuration = ((Date.now() - startTime) / 1000).toFixed(2);
+
+  // 4. Filter & sort by latency (fastest first)
+  const validFastProxies = testResults
+    .filter(r => r.working)
+    .sort((a, b) => a.latency - b.latency);
+
+  console.log(`⏱️ Parallel scan completed in ${scanDuration}s. Found ${validFastProxies.length} responsive proxies under 800ms.`);
+
+  for (const item of validFastProxies) {
+    if (!workingProxies.includes(item.proxy)) {
+      console.log(`  ✅ [${item.latency}ms] Active Proxy: ${item.proxy}`);
+      workingProxies.push(item.proxy);
     }
   }
 
-  console.log(`\nVerified ${workingProxies.length} active proxies for config.json.`);
+  // Limit to top 15 fastest proxies
+  const finalProxies = workingProxies.slice(0, 15);
+  console.log(`\n💾 Saved top ${finalProxies.length} active proxies to config.json.`);
 
   // Update config.json
-  let config = {};
-  if (fs.existsSync(CONFIG_PATH)) {
-    try {
-      config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-    } catch (e) {}
-  }
-
-  config.proxies = workingProxies;
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8');
-  console.log(`✅ Updated config.json with ${workingProxies.length} proxies.`);
+  existingConfig.proxies = finalProxies;
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(existingConfig, null, 2), 'utf8');
 }
 
 main().catch(err => {
-  console.error('Option 2 Proxy aggregation failed:', err.message);
+  console.error('❌ Optimized Proxy Aggregation failed:', err.message);
   process.exit(0);
 });
