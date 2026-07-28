@@ -1,0 +1,7 @@
+name = "cf-edge-traffic-fetcher"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# Cloudflare Workers free tier configuration (100,000 requests/day free)
+[vars]
+ENVIRONMENT = "production"

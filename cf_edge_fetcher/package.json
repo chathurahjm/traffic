@@ -1,0 +1,16 @@
+{
+  "name": "cf-edge-traffic-fetcher",
+  "version": "1.0.0",
+  "description": "Cloudflare Workers Edge Fetcher for distributed web traffic simulation across global edge nodes",
+  "type": "module",
+  "main": "worker.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "start": "node cf_runner.js"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "wrangler": "^3.107.0"
+  }
+}
