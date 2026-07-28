@@ -1,0 +1,59 @@
+name: Tor Organic Google Search Generator
+
+on:
+  workflow_dispatch:
+    inputs:
+      keyword:
+        description: 'Google Search Keyword'
+        required: false
+        default: 'just paste it'
+      target_domain:
+        description: 'Target Domain to Find & Click'
+        required: false
+        default: 'justpasteit.in'
+      sessions:
+        description: 'Number of sessions to run'
+        required: false
+        default: '3'
+  schedule:
+    # Run every 6 hours automatically
+    - cron: '0 */6 * * *'
+
+jobs:
+  tor-organic-search:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Tor, ffmpeg & Chrome dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tor ffmpeg chromium-browser
+          sudo service tor start
+          sleep 5
+          sudo service tor status
+
+      - name: Install Node dependencies
+        run: |
+          cd tor_demo
+          npm install
+
+      - name: Run Tor Organic Google Search Generator
+        run: |
+          cd tor_demo
+          node tor_search_runner.js "${{ github.event.inputs.sessions || '3' }}" "${{ github.event.inputs.keyword || 'just paste it' }}" "${{ github.event.inputs.target_domain || 'justpasteit.in' }}" --headless
+
+      - name: Upload Organic Search Video Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tor-organic-search-videos
+          path: tor_demo/videos/*.mp4
+          retention-days: 7
