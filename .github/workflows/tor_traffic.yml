@@ -6,7 +6,7 @@ on:
       target_url:
         description: 'Target website URL'
         required: false
-        default: 'https://justpasteit.in/'
+        default: 'http://justpasteit.in/'
       sessions:
         description: 'Number of sessions to run'
         required: false
@@ -41,10 +41,10 @@ jobs:
           cd tor_demo
           npm install
 
-      - name: Run Tor Puppeteer Traffic Generator with Video Recording
+      - name: Run Tor Puppeteer Traffic Generator with GA Event Capture
         run: |
           cd tor_demo
-          node tor_runner.js "${{ github.event.inputs.sessions || '3' }}" "${{ github.event.inputs.target_url || 'https://justpasteit.in/' }}" --headless
+          node tor_runner.js "${{ github.event.inputs.sessions || '3' }}" "${{ github.event.inputs.target_url || 'http://justpasteit.in/' }}" --headless
 
       - name: Upload Session Video Artifacts
         if: always()
