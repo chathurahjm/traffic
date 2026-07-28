@@ -37,7 +37,6 @@ function getFallbackProxy() {
     if (existsSync(configPath)) {
       const data = JSON.parse(readFileSync(configPath, 'utf8'));
       if (data.proxies && data.proxies.length > 0) {
-        // Pick first remote proxy (excluding 127.0.0.1 / localhost)
         const remote = data.proxies.find(p => !p.includes('127.0.0.1') && !p.includes('localhost'));
         if (remote) {
           return remote.startsWith('socks5://') || remote.startsWith('http://') ? remote : `socks5://${remote}`;
@@ -51,7 +50,7 @@ function getFallbackProxy() {
 }
 
 /**
- * Runs a single Puppeteer session through Tor or Proxy with Visible UI Mode & MP4 Video Recording
+ * Runs a single Puppeteer session through Tor or Proxy with GA Event Tracking & Engagement
  * @param {string} targetUrl - Webpage to visit
  * @param {string} socksProxy - Tor SOCKS5 proxy endpoint (default: socks5://127.0.0.1:9050)
  * @param {{username?: string, password?: string}} [auth] - Optional proxy auth
@@ -65,7 +64,7 @@ export async function runTorSession(
 ) {
   const isHeadless = options.headless ?? false;
   console.log(`\n---------------------------------------------------`);
-  console.log(`🖥️ Launching Browser UI (Headless: ${isHeadless})...`);
+  console.log(`🖥️ Launching Browser Engine (Headless: ${isHeadless})...`);
   console.log(`🚀 Primary Proxy: ${socksProxy}`);
   
   const executablePath = findBrowserExecutable();
@@ -89,7 +88,7 @@ export async function runTorSession(
 
     return await puppeteer.launch({
       executablePath,
-      headless: isHeadless, // false = opens real Chrome window UI!
+      headless: isHeadless,
       ignoreHTTPSErrors: true,
       defaultViewport: { width: 1366, height: 768 },
       args: launchArgs
@@ -107,15 +106,36 @@ export async function runTorSession(
   let recorder = null;
   let videoPath = null;
 
+  const setupPage = async (b) => {
+    const p = await b.newPage();
+    await p.setViewport({ width: 1366, height: 768 });
+
+    // Mask navigator.webdriver for realistic GA tracking
+    await p.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => false });
+    });
+
+    await p.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
+    // Monitor for Google Analytics requests
+    let gaEventsFired = 0;
+    p.on('request', (req) => {
+      const u = req.url();
+      if (u.includes('google-analytics.com') || u.includes('analytics.google.com') || u.includes('/g/collect')) {
+        gaEventsFired++;
+        console.log(`📊 [GA Event Dispatched] -> ${u.substring(0, 80)}...`);
+      }
+    });
+
+    return { page: p, getGaCount: () => gaEventsFired };
+  };
+
   try {
-    let page = await browser.newPage();
-    await page.setViewport({ width: 1366, height: 768 });
+    let { page, getGaCount } = await setupPage(browser);
     
     if (auth && auth.username && activeProxy === socksProxy) {
       await page.authenticate({ username: auth.username, password: auth.password }).catch(() => {});
     }
-
-    await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
     // Setup Video Recording
     if (options.recordVideo !== false) {
@@ -125,14 +145,10 @@ export async function runTorSession(
           mkdirSync(videosDir, { recursive: true });
         }
         videoPath = path.join(videosDir, `tor_session_${Date.now()}.mp4`);
-        recorder = new PuppeteerScreenRecorder(page, {
-          fps: 25,
-          aspectRatio: '16:9'
-        });
+        recorder = new PuppeteerScreenRecorder(page, { fps: 25, aspectRatio: '16:9' });
         await recorder.start(videoPath);
         console.log(`🎥 Video Recording Started: ${videoPath}`);
       } catch (recErr) {
-        console.warn(`ℹ️ Video recorder note: ${recErr.message}`);
         recorder = null;
       }
     }
@@ -156,15 +172,13 @@ export async function runTorSession(
       const fallback = getFallbackProxy();
       if (fallback) {
         console.log(`🔄 Trying harvested public proxy: ${fallback}...`);
-        if (recorder) {
-          await recorder.stop().catch(() => {});
-          recorder = null;
-        }
+        if (recorder) { await recorder.stop().catch(() => {}); recorder = null; }
         await browser.close();
         activeProxy = fallback;
         browser = await launchBrowser(activeProxy);
-        page = await browser.newPage();
-        await page.setViewport({ width: 1366, height: 768 });
+        const res = await setupPage(browser);
+        page = res.page;
+        getGaCount = res.getGaCount;
         
         if (videoPath) {
           recorder = new PuppeteerScreenRecorder(page, { fps: 25, aspectRatio: '16:9' });
@@ -183,18 +197,16 @@ export async function runTorSession(
         }
       }
 
-      // Final fallback: Direct Connection for smooth local UI testing
+      // Final fallback: Direct Connection for local testing
       if (!connectionSuccess) {
-        console.log(`🌐 Falling back to Direct Local Connection for UI demonstration...`);
-        if (recorder) {
-          await recorder.stop().catch(() => {});
-          recorder = null;
-        }
+        console.log(`🌐 Falling back to Direct Connection for DOM execution...`);
+        if (recorder) { await recorder.stop().catch(() => {}); recorder = null; }
         await browser.close();
         activeProxy = null;
         browser = await launchBrowser(null);
-        page = await browser.newPage();
-        await page.setViewport({ width: 1366, height: 768 });
+        const res = await setupPage(browser);
+        page = res.page;
+        getGaCount = res.getGaCount;
 
         if (videoPath) {
           recorder = new PuppeteerScreenRecorder(page, { fps: 25, aspectRatio: '16:9' });
@@ -211,24 +223,30 @@ export async function runTorSession(
       }
     }
 
-    // Step 3: Navigate to target website in Chrome UI window
-    console.log(`🎯 Navigating to target site in Chrome UI: ${targetUrl}...`);
+    // Step 3: Navigate to target website with Full JS Execution & GA Event Capture
+    console.log(`🎯 Navigating to target site with DOM & JS execution: ${targetUrl}...`);
     const startTime = Date.now();
-    const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    const response = await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 35000 }).catch(async () => {
+      return await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    });
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 
     console.log(`📊 Page Load Status: ${response?.status() || 200} (${duration}s)`);
     console.log(`📄 Page Title: "${await page.title()}"`);
 
-    // Step 4: Simulate realistic human engagement visible on screen
-    console.log(`⏱️ Demonstrating visual human engagement (scrolling down & mouse movements)...`);
-    for (let i = 0; i < 4; i++) {
-      await page.evaluate(() => window.scrollBy(0, 200));
-      await new Promise(r => setTimeout(r, 800));
+    // Step 4: Engagement & Active Stay for GA4 Session Tracking
+    console.log(`⏱️ Simulating 10s engaged session (scrolling, focus, mouse movements for GA4)...`);
+    for (let i = 0; i < 5; i++) {
+      await page.evaluate(() => {
+        window.scrollBy(0, 150);
+        window.dispatchEvent(new Event('focus'));
+        window.dispatchEvent(new Event('mousemove'));
+      });
+      await new Promise(r => setTimeout(r, 2000));
     }
 
-    console.log(`✨ Visual session completed successfully! Keeping UI open for 3 seconds...`);
-    await new Promise(r => setTimeout(r, 3000));
+    console.log(`📈 GA Tracking Summary: Captured ${getGaCount()} GA network beacon events!`);
+    console.log(`✨ Session completed successfully!`);
 
   } catch (error) {
     console.error(`❌ Error during browser session:`, error.message);
