@@ -1,5 +1,6 @@
 import puppeteer from 'puppeteer-core';
-import { existsSync, readFileSync } from 'fs';
+import { PuppeteerScreenRecorder } from 'puppeteer-screen-recorder';
+import { existsSync, readFileSync, mkdirSync } from 'fs';
 import { execSync } from 'child_process';
 import path from 'path';
 
@@ -50,23 +51,23 @@ function getFallbackProxy() {
 }
 
 /**
- * Runs a single Puppeteer session through Tor or Proxy with Visible UI Mode
+ * Runs a single Puppeteer session through Tor or Proxy with Visible UI Mode & MP4 Video Recording
  * @param {string} targetUrl - Webpage to visit
  * @param {string} socksProxy - Tor SOCKS5 proxy endpoint (default: socks5://127.0.0.1:9050)
  * @param {{username?: string, password?: string}} [auth] - Optional proxy auth
- * @param {{headless?: boolean, enableFallback?: boolean}} [options] - Configuration options
+ * @param {{headless?: boolean, enableFallback?: boolean, recordVideo?: boolean}} [options] - Configuration options
  */
 export async function runTorSession(
-  targetUrl = 'https://ustpasteit.in/',
-  socksProxy = 'socks5://127.0.0.1:9050',
+  targetUrl = 'https://justpasteit.in/', 
+  socksProxy = 'socks5://127.0.0.1:9050', 
   auth = null,
-  options = { headless: false, enableFallback: true }
+  options = { headless: false, enableFallback: true, recordVideo: true }
 ) {
   const isHeadless = options.headless ?? false;
   console.log(`\n---------------------------------------------------`);
   console.log(`🖥️ Launching Browser UI (Headless: ${isHeadless})...`);
   console.log(`🚀 Primary Proxy: ${socksProxy}`);
-
+  
   const executablePath = findBrowserExecutable();
   console.log(`📍 Using browser binary: ${executablePath}`);
 
@@ -90,7 +91,7 @@ export async function runTorSession(
       executablePath,
       headless: isHeadless, // false = opens real Chrome window UI!
       ignoreHTTPSErrors: true,
-      defaultViewport: null,
+      defaultViewport: { width: 1366, height: 768 },
       args: launchArgs
     });
   };
@@ -103,14 +104,38 @@ export async function runTorSession(
     return;
   }
 
+  let recorder = null;
+  let videoPath = null;
+
   try {
     let page = await browser.newPage();
-
+    await page.setViewport({ width: 1366, height: 768 });
+    
     if (auth && auth.username && activeProxy === socksProxy) {
-      await page.authenticate({ username: auth.username, password: auth.password }).catch(() => { });
+      await page.authenticate({ username: auth.username, password: auth.password }).catch(() => {});
     }
 
     await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
+    // Setup Video Recording
+    if (options.recordVideo !== false) {
+      try {
+        const videosDir = path.resolve('./videos');
+        if (!existsSync(videosDir)) {
+          mkdirSync(videosDir, { recursive: true });
+        }
+        videoPath = path.join(videosDir, `tor_session_${Date.now()}.mp4`);
+        recorder = new PuppeteerScreenRecorder(page, {
+          fps: 25,
+          aspectRatio: '16:9'
+        });
+        await recorder.start(videoPath);
+        console.log(`🎥 Video Recording Started: ${videoPath}`);
+      } catch (recErr) {
+        console.warn(`ℹ️ Video recorder note: ${recErr.message}`);
+        recorder = null;
+      }
+    }
 
     // Step 1: Check IP Address
     console.log(`🌐 Testing connection & checking IP via api.ipify.org...`);
@@ -131,10 +156,21 @@ export async function runTorSession(
       const fallback = getFallbackProxy();
       if (fallback) {
         console.log(`🔄 Trying harvested public proxy: ${fallback}...`);
+        if (recorder) {
+          await recorder.stop().catch(() => {});
+          recorder = null;
+        }
         await browser.close();
         activeProxy = fallback;
         browser = await launchBrowser(activeProxy);
         page = await browser.newPage();
+        await page.setViewport({ width: 1366, height: 768 });
+        
+        if (videoPath) {
+          recorder = new PuppeteerScreenRecorder(page, { fps: 25, aspectRatio: '16:9' });
+          await recorder.start(videoPath).catch(() => { recorder = null; });
+        }
+
         try {
           await page.goto('https://api.ipify.org?format=json', { waitUntil: 'networkidle2', timeout: 7000 });
           const fbIp = await page.evaluate(() => document.body.innerText);
@@ -150,10 +186,21 @@ export async function runTorSession(
       // Final fallback: Direct Connection for smooth local UI testing
       if (!connectionSuccess) {
         console.log(`🌐 Falling back to Direct Local Connection for UI demonstration...`);
+        if (recorder) {
+          await recorder.stop().catch(() => {});
+          recorder = null;
+        }
         await browser.close();
         activeProxy = null;
         browser = await launchBrowser(null);
         page = await browser.newPage();
+        await page.setViewport({ width: 1366, height: 768 });
+
+        if (videoPath) {
+          recorder = new PuppeteerScreenRecorder(page, { fps: 25, aspectRatio: '16:9' });
+          await recorder.start(videoPath).catch(() => { recorder = null; });
+        }
+
         try {
           await page.goto('https://api.ipify.org?format=json', { waitUntil: 'networkidle2', timeout: 7000 });
           const directIp = await page.evaluate(() => document.body.innerText);
@@ -186,13 +233,21 @@ export async function runTorSession(
   } catch (error) {
     console.error(`❌ Error during browser session:`, error.message);
   } finally {
+    if (recorder) {
+      try {
+        await recorder.stop();
+        console.log(`🎬 Saved MP4 Video Artifact: ${videoPath}`);
+      } catch (e) {
+        // Ignore
+      }
+    }
     if (browser) await browser.close();
   }
 }
 
 // Execute standalone if called directly
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const target = process.argv[2] || 'https://ustpasteit.in/';
+  const target = process.argv[2] || 'https://justpasteit.in/';
   const headlessArg = process.argv.includes('--headless');
-  runTorSession(target, 'socks5://127.0.0.1:9050', null, { headless: headlessArg, enableFallback: true });
+  runTorSession(target, 'socks5://127.0.0.1:9050', null, { headless: headlessArg, enableFallback: true, recordVideo: true });
 }

@@ -9,6 +9,7 @@
     "demo": "node tor_runner.js"
   },
   "dependencies": {
-    "puppeteer-core": "^24.2.1"
+    "puppeteer-core": "^24.2.1",
+    "puppeteer-screen-recorder": "^3.0.6"
   }
 }

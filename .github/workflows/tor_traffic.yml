@@ -28,10 +28,10 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install Tor & Chrome dependencies
+      - name: Install Tor, ffmpeg & Chrome dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y tor chromium-browser
+          sudo apt-get install -y tor ffmpeg chromium-browser
           sudo service tor start
           sleep 5
           sudo service tor status
@@ -41,7 +41,15 @@ jobs:
           cd tor_demo
           npm install
 
-      - name: Run Tor Puppeteer Traffic Generator
+      - name: Run Tor Puppeteer Traffic Generator with Video Recording
         run: |
           cd tor_demo
           node tor_runner.js "${{ github.event.inputs.sessions || '3' }}" "${{ github.event.inputs.target_url || 'https://justpasteit.in/' }}" --headless
+
+      - name: Upload Session Video Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tor-puppeteer-execution-videos
+          path: tor_demo/videos/*.mp4
+          retention-days: 7
