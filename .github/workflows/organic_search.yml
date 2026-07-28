@@ -47,9 +47,9 @@ jobs:
       - name: Install Node Dependencies
         run: npm ci
 
-      - name: Install & Start TOR Service (SOCKS5 Proxy)
+      - name: Install TOR & ffmpeg (Video Encoder)
         run: |
-          sudo apt-get update && sudo apt-get install -y tor
+          sudo apt-get update && sudo apt-get install -y tor ffmpeg
           sudo service tor start
           sleep 5
           echo "🧅 TOR SOCKS5 active on 127.0.0.1:9050"
@@ -76,3 +76,11 @@ jobs:
           HEADLESS: 'true'
         run: |
           node search_runner.js
+
+      - name: Upload First 20-Minutes Session Video Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: organic-search-video-first-20min
+          path: videos/*.mp4
+          retention-days: 7

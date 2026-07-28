@@ -3,9 +3,80 @@ import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import { exec } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const SCRIPT_START_TIME = Date.now();
+const MAX_RECORDING_DURATION_MS = 20 * 60 * 1000; // Cap video recording at first 20 minutes
+const VIDEOS_DIR = path.join(__dirname, 'videos');
+
+if (!fs.existsSync(VIDEOS_DIR)) {
+  fs.mkdirSync(VIDEOS_DIR, { recursive: true });
+}
+
+async function setupScreencastRecorder(page, workerId) {
+  // Cap recording to first 20 minutes of run time
+  if (Date.now() - SCRIPT_START_TIME >= MAX_RECORDING_DURATION_MS) {
+    return null;
+  }
+
+  const framesDir = path.join(__dirname, 'temp_frames', workerId);
+  fs.mkdirSync(framesDir, { recursive: true });
+
+  let frameCount = 0;
+  let recordingActive = true;
+
+  try {
+    const cdp = await page.target().createCDPSession();
+    await cdp.send('Page.startScreencast', {
+      format: 'jpeg',
+      quality: 75,
+      everyNthFrame: 2
+    });
+
+    cdp.on('Page.screencastFrame', async (event) => {
+      if (!recordingActive) return;
+      if (Date.now() - SCRIPT_START_TIME >= MAX_RECORDING_DURATION_MS) {
+        recordingActive = false;
+        try { await cdp.send('Page.stopScreencast'); } catch (e) {}
+        return;
+      }
+      try {
+        frameCount++;
+        const filename = path.join(framesDir, `frame_${String(frameCount).padStart(6, '0')}.jpg`);
+        fs.writeFileSync(filename, Buffer.from(event.data, 'base64'));
+        await cdp.send('Page.screencastFrameAck', { sessionId: event.sessionId }).catch(() => {});
+      } catch (e) {}
+    });
+
+    return {
+      stop: async () => {
+        recordingActive = false;
+        try { await cdp.send('Page.stopScreencast'); } catch (e) {}
+
+        if (frameCount > 5) {
+          const videoFile = path.join(VIDEOS_DIR, `organic_search_${workerId}.mp4`);
+          await new Promise((resolve) => {
+            const ffmpegCmd = `ffmpeg -y -framerate 10 -i "${framesDir}/frame_%06d.jpg" -c:v libx264 -pix_fmt yuv420p "${videoFile}"`;
+            exec(ffmpegCmd, (err) => {
+              if (!err) {
+                console.log(`[${new Date().toLocaleTimeString()}] ✅ [SUCCESS] 📹 First 20-min video saved: ${videoFile}`);
+              }
+              try { fs.rmSync(framesDir, { recursive: true, force: true }); } catch (e) {}
+              resolve();
+            });
+          });
+        } else {
+          try { fs.rmSync(framesDir, { recursive: true, force: true }); } catch (e) {}
+        }
+      }
+    };
+  } catch (e) {
+    return null;
+  }
+}
 
 // Configurations
 const SEARCH_CONFIG_PATH = path.join(__dirname, 'search_config.json');
@@ -106,6 +177,7 @@ async function runWorker(workerIndex) {
   log(`[${workerId}] Launching worker session...`);
 
   let browser = null;
+  let screencastRecorder = null;
 
   try {
     const userAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
@@ -144,12 +216,15 @@ async function runWorker(workerIndex) {
         '--disable-gpu',
         '--no-first-run',
         '--no-zygote',
+        '--ignore-certificate-errors',
+        '--ignore-certificate-errors-spki-list',
         ...proxyArgs
       ]
     });
 
     const context = await browser.createBrowserContext();
     const page = await context.newPage();
+    screencastRecorder = await setupScreencastRecorder(page, workerId);
 
     if (proxyAuth) {
       await page.authenticate(proxyAuth);
@@ -388,6 +463,11 @@ async function runWorker(workerIndex) {
     visitsFailed++;
     log(`[${workerId}] Worker error: ${err.message}`, 'ERROR');
   } finally {
+    if (screencastRecorder) {
+      try {
+        await screencastRecorder.stop();
+      } catch (e) {}
+    }
     if (browser) {
       try {
         await browser.close();
