@@ -1,0 +1,46 @@
+name: Tor Puppeteer Traffic Generator
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'Target website URL'
+        required: false
+        default: 'https://ustpasteit.in/'
+      sessions:
+        description: 'Number of sessions to run'
+        required: false
+        default: '3'
+  schedule:
+    # Run every 6 hours automatically
+    - cron: '0 */6 * * *'
+
+jobs:
+  tor-traffic:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install Tor & Chrome dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tor chromium-browser
+          sudo service tor start
+          sudo service tor status
+
+      - name: Install Node dependencies
+        run: |
+          cd tor_demo
+          npm install
+
+      - name: Run Tor Puppeteer Traffic Demo
+        run: |
+          cd tor_demo
+          node tor_runner.js "${{ github.event.inputs.sessions || '3' }}" "${{ github.event.inputs.target_url || 'https://ustpasteit.in/' }}"

@@ -1,0 +1,14 @@
+{
+  "name": "tor-puppeteer-traffic-demo",
+  "version": "1.0.0",
+  "description": "Sample demo demonstrating Tor Network SOCKS5 proxy integration with Puppeteer for IP diversity",
+  "type": "module",
+  "main": "tor_test.js",
+  "scripts": {
+    "start": "node tor_test.js",
+    "demo": "node tor_runner.js"
+  },
+  "dependencies": {
+    "puppeteer-core": "^24.2.1"
+  }
+}
