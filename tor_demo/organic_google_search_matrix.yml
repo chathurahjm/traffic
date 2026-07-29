@@ -1,0 +1,62 @@
+name: Multi-OS Organic Google Search Matrix
+
+on:
+  workflow_dispatch:
+    inputs:
+      keyword:
+        description: 'Google Search Keyword'
+        required: false
+        default: 'just paste it'
+      target_domain:
+        description: 'Target Domain to Find & Click'
+        required: false
+        default: 'justpasteit.in'
+      sessions:
+        description: 'Sessions per OS Runner'
+        required: false
+        default: '7'
+  schedule:
+    # Triggers every 30 minutes (48 times/day x 3 OS runners x 7 sessions ≈ 1008 runs daily)
+    - cron: '*/30 * * * *'
+
+jobs:
+  organic-search-matrix:
+    name: Organic Search on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Chrome (Linux & macOS)
+        if: matrix.os != 'windows-latest'
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      - name: Install Node dependencies
+        run: |
+          cd tor_demo
+          npm install
+
+      - name: Run Organic Search Sessions
+        run: |
+          cd tor_demo
+          node matrix_runner.js "${{ github.event.inputs.sessions || '7' }}" "${{ github.event.inputs.keyword || 'just paste it' }}" "${{ github.event.inputs.target_domain || 'justpasteit.in' }}" --headless
+
+      - name: Upload Search Video Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: organic-search-videos-${{ matrix.os }}
+          path: tor_demo/videos/*.mp4
+          retention-days: 7
