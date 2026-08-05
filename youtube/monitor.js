@@ -1,5 +1,5 @@
-const { chromium } = require("playwright");
-const fs = require("fs");
+import { chromium } from "playwright";
+import fs from "fs";
 
 (async () => {
     const browser = await chromium.launch({
