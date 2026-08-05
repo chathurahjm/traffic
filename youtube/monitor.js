@@ -8,7 +8,7 @@ import fs from "fs";
 
     const page = await browser.newPage();
 
-    const url = process.env.TARGET_URL;
+    const url = "https://www.youtube.com/watch?v=wvqdwiYKXSY&list=PLaW-yAT1_JFV5GyJX6fsuhbXTNLKVTeqS&index=1";
 
     await page.goto(url, {
         waitUntil: "networkidle",
