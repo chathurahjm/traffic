@@ -13,7 +13,7 @@ on:
         default: '3'
   schedule:
     # Run every 6 hours automatically
-    - cron: '0 */6 * * *'
+    - cron: '0 */1 * * *'
 
 jobs:
   tor-traffic:
@@ -44,7 +44,7 @@ jobs:
       - name: Run Tor Puppeteer Traffic Generator with GA Event Capture
         run: |
           cd tor_demo
-          node tor_runner.js "${{ github.event.inputs.sessions || '3' }}" "${{ github.event.inputs.target_url || 'http://justpasteit.in/' }}" --headless
+          node tor_runner.js "${{ github.event.inputs.sessions || '20' }}" "${{ github.event.inputs.target_url || 'http://justpasteit.in/' }}" --headless
 
       - name: Upload Session Video Artifacts
         if: always()
