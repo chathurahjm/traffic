@@ -10,7 +10,7 @@ on:
       sessions:
         description: 'Number of sessions to run'
         required: false
-        default: '3'
+        default: '20'
   schedule:
     # Run every 6 hours automatically
     - cron: '0 */1 * * *'
