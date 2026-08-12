@@ -14,7 +14,7 @@ on:
       sessions:
         description: 'Sessions per OS Runner'
         required: false
-        default: '7'
+        default: '14'
   schedule:
     # Triggers every 30 minutes (48 times/day x 3 OS runners x 7 sessions ≈ 1008 runs daily)
     - cron: '*/30 * * * *'
