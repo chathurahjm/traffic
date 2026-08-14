@@ -157,17 +157,18 @@ async function ensureVideoPlaying(page, targetUrl, consecutiveStallCount = 0) {
     await configurePlaylistAndAutoplay(page);
 
     try {
-        const state = await getVideoState(page);
+        let state = await getVideoState(page);
 
         // Check if video is ended, stalled on NaN duration, or in ended player state
         const isVideoEndedOrStalled = state.ended || state.playerState === 0 || (!state.duration && state.currentTime === 0);
-        const isPaused = state.paused || state.playerState === 2 || state.playerState === -1;
+        const isPaused = state.paused || state.playerState === 2 || state.playerState === -1 || state.playerState === 5;
 
         if (isVideoEndedOrStalled && consecutiveStallCount >= 2) {
             console.log(`🔄 Playlist/Video ended or stalled at 0s/NaN. Restarting playlist navigation...`);
             await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 60000 }).catch(() => {});
             await page.waitForTimeout(5000);
             await configurePlaylistAndAutoplay(page);
+            state = await getVideoState(page);
         }
 
         // If player is ended or replay button is visible, click replay / playVideo / nextVideo
@@ -183,37 +184,52 @@ async function ensureVideoPlaying(page, targetUrl, consecutiveStallCount = 0) {
                 if (replayBtn) replayBtn.click();
             }).catch(() => {});
             await page.waitForTimeout(2000);
+            state = await getVideoState(page);
         }
 
-        if (isPaused || isVideoEndedOrStalled) {
-            console.log(`▶️ Video is paused/idle (playerState: ${state.playerState}). Resuming playback...`);
+        if (state.paused || state.playerState === 2 || state.playerState === -1 || state.playerState === 5 || isVideoEndedOrStalled) {
+            console.log(`▶️ Video is paused/idle (playerState: ${state.playerState}). Resuming playback with Space bar...`);
 
-            // 1. YouTube Player API call
-            await page.evaluate(() => {
-                const player = document.getElementById('movie_player');
-                if (player && typeof player.playVideo === 'function') {
-                    player.playVideo();
+            // 1. Click on large play button or player canvas to ensure user interaction gesture
+            const largePlayBtn = await page.$('.ytp-large-play-button, button.ytp-large-play-button-modern');
+            if (largePlayBtn && await largePlayBtn.isVisible()) {
+                await largePlayBtn.click().catch(() => {});
+                await page.waitForTimeout(500);
+            } else {
+                const playerElem = await page.$('#movie_player, .html5-video-player, video');
+                if (playerElem) {
+                    await playerElem.click({ force: true }).catch(() => {});
                 }
-            }).catch(() => {});
-
-            // 2. Click player play button if it indicates paused
-            const playButton = await page.$('.ytp-play-button[aria-label*="Play"], .ytp-play-button[title*="Play"]');
-            if (playButton && await playButton.isVisible()) {
-                await playButton.click().catch(() => {});
             }
 
-            // 3. Focus player and press Space / 'k' key
-            await page.focus('#movie_player').catch(() => {});
-            await page.keyboard.press('k').catch(() => {});
+            // 2. Press Space bar on player across all OS platforms
+            await page.keyboard.press('Space').catch(() => {});
             await page.waitForTimeout(1000);
 
-            // 4. Fallback HTML5 play directly
-            await page.evaluate(() => {
-                const v = document.querySelector('video');
-                if (v && v.paused) {
-                    v.play().catch(() => {});
+            // 3. Verify playback state; if still paused, try play button, 'k' key & API fallbacks
+            const curState = await getVideoState(page);
+            if (curState.paused || curState.playerState === 2) {
+                const playButton = await page.$('.ytp-play-button[aria-label*="Play"], .ytp-play-button[title*="Play"], button.ytp-play-button');
+                if (playButton && await playButton.isVisible()) {
+                    await playButton.click().catch(() => {});
+                    await page.waitForTimeout(500);
                 }
-            }).catch(() => {});
+
+                await page.keyboard.press('k').catch(() => {});
+                await page.waitForTimeout(500);
+
+                // 4. YouTube API & HTML5 fallback
+                await page.evaluate(() => {
+                    const player = document.getElementById('movie_player');
+                    if (player && typeof player.playVideo === 'function') {
+                        player.playVideo();
+                    }
+                    const v = document.querySelector('video');
+                    if (v && v.paused) {
+                        v.play().catch(() => {});
+                    }
+                }).catch(() => {});
+            }
         }
     } catch (err) {
         console.warn(`⚠️ Warning in ensureVideoPlaying:`, err.message);
