@@ -237,8 +237,8 @@ async function ensureVideoPlaying(page, targetUrl, consecutiveStallCount = 0) {
 }
 
 (async () => {
-    // Duration and interval settings (defaults: 2 hours total, screenshot every 30 mins)
-    const DURATION_MINUTES = parseInt(process.env.DURATION_MINUTES || '120', 10);
+    // Duration and interval settings (defaults: 4 hours total, screenshot every 30 mins)
+    const DURATION_MINUTES = parseInt(process.env.DURATION_MINUTES || '240', 10);
     const SCREENSHOT_INTERVAL_MINUTES = parseInt(process.env.SCREENSHOT_INTERVAL_MINUTES || '30', 10);
 
     const totalDurationMs = DURATION_MINUTES * 60 * 1000;
@@ -357,7 +357,7 @@ async function ensureVideoPlaying(page, targetUrl, consecutiveStallCount = 0) {
         let consecutiveStallCount = 0;
         let lastKnownTime = -1;
 
-        console.log(`\n⏳ Continuous 2-hour monitoring loop started at ${new Date().toISOString()}...`);
+        console.log(`\n⏳ Continuous ${DURATION_MINUTES / 60}-hour monitoring loop started at ${new Date().toISOString()}...`);
 
         while (Date.now() - startTime < totalDurationMs) {
             // Heartbeat every 30 seconds to maintain playback & dismiss popups/ads
@@ -404,7 +404,7 @@ async function ensureVideoPlaying(page, targetUrl, consecutiveStallCount = 0) {
 
         // Final screenshot at completion
         await captureScreenshot(`${String(DURATION_MINUTES).padStart(3, '0')}m_final`);
-        console.log(`\n🎉 Completed ${DURATION_MINUTES} minutes (2 hours) of video playback & monitoring!`);
+        console.log(`\n🎉 Completed ${DURATION_MINUTES} minutes (${DURATION_MINUTES / 60} hours) of video playback & monitoring!`);
 
     } catch (err) {
         console.error(`❌ Page navigation / playback error:`, err.message);

@@ -11,12 +11,16 @@ on:
         description: 'VPN Country Code (e.g. US, JP, DE, or empty for best global)'
         required: false
         default: ''
+      duration_minutes:
+        description: 'Run duration in minutes'
+        required: false
+        default: '240'
   schedule:
-    - cron: "0 */3 * * *"
+    - cron: "0 */5 * * *"
 
 jobs:
   screenshot:
-    timeout-minutes: 180
+    timeout-minutes: 300
     strategy:
       matrix:
         os:
@@ -29,6 +33,7 @@ jobs:
     env:
       TARGET_URL: ${{ github.event.inputs.target_url || 'https://www.youtube.com/watch?v=wvqdwiYKXSY&list=PLaW-yAT1_JFV5GyJX6fsuhbXTNLKVTeqS&index=1' }}
       AUTH_STATE_JSON: ${{ secrets.AUTH_STATE_JSON }}
+      DURATION_MINUTES: ${{ github.event.inputs.duration_minutes || '240' }}
 
     steps:
       - uses: actions/checkout@v4
