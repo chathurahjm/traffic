@@ -25,7 +25,7 @@ async function getPublicIpInfo() {
 }
 
 /**
- * Helper to handle overlays, consent dialogs, and skip ads
+ * Helper to handle overlays, consent dialogs, sign-in prompts, and skip ads
  */
 async function handlePopupsAndAds(page) {
     try {
@@ -47,12 +47,13 @@ async function handlePopupsAndAds(page) {
             }
         }
 
-        // Click "Skip Ad" if available
+        // Click "Skip Ad" or close ad overlay if available
         const adSkipSelectors = [
             '.ytp-skip-ad-button',
             '.ytp-ad-skip-button-modern',
             '.ytp-ad-skip-button',
-            '.ytp-ad-overlay-close-button'
+            '.ytp-ad-overlay-close-button',
+            'button.ytp-ad-skip-button-icon'
         ];
         for (const selector of adSkipSelectors) {
             const skipBtn = await page.$(selector);
@@ -63,55 +64,160 @@ async function handlePopupsAndAds(page) {
         }
 
         // Dismiss "Video paused. Continue watching?" or "Still watching?" dialog
-        const confirmBtn = await page.$('yt-confirm-dialog-renderer #confirm-button, paper-dialog #confirm-button');
+        const confirmBtn = await page.$('yt-confirm-dialog-renderer #confirm-button, paper-dialog #confirm-button, yt-button-shape:has-text("Yes")');
         if (confirmBtn && await confirmBtn.isVisible()) {
             console.log(`🔘 Dismissing "Still watching?" prompt...`);
             await confirmBtn.click().catch(() => {});
+        }
+
+        // Dismiss YouTube "Sign in to get the best experience" or promo popups
+        const dismissPromoBtn = await page.$('ytd-popup-container #dismiss-button, #dismiss-button ytd-button-renderer, tp-yt-paper-button:has-text("Dismiss"), yt-button-renderer:has-text("No thanks")');
+        if (dismissPromoBtn && await dismissPromoBtn.isVisible()) {
+            console.log(`🔘 Dismissing promo popup...`);
+            await dismissPromoBtn.click().catch(() => {});
         }
     } catch {}
 }
 
 /**
- * Ensure video is actively playing
+ * Configure YouTube playlist loop and autoplay settings
  */
-async function ensureVideoPlaying(page) {
+async function configurePlaylistAndAutoplay(page) {
+    try {
+        await page.evaluate(() => {
+            const player = document.getElementById('movie_player');
+            if (player) {
+                // Ensure loop playlist is enabled via YouTube API
+                if (typeof player.setLoop === 'function') {
+                    player.setLoop(true);
+                }
+            }
+
+            // Enable loop playlist button in UI if available and not yet active
+            const loopBtn = document.querySelector('ytd-playlist-panel-renderer button[aria-label*="Loop"], .ytp-playlist-loop-button, button.ytp-playlist-loop-button');
+            if (loopBtn) {
+                const isAriaPressed = loopBtn.getAttribute('aria-pressed');
+                if (isAriaPressed === 'false' || isAriaPressed === null) {
+                    loopBtn.click();
+                }
+            }
+
+            // Enable Autonav (Autoplay next video) if toggled off
+            const autonavBtn = document.querySelector('.ytp-autonav-toggle-button');
+            if (autonavBtn && autonavBtn.getAttribute('aria-checked') === 'false') {
+                autonavBtn.click();
+            }
+        }).catch(() => {});
+    } catch {}
+}
+
+/**
+ * Get detailed player and video state
+ */
+async function getVideoState(page) {
+    return await page.evaluate(() => {
+        const v = document.querySelector('video');
+        const player = document.getElementById('movie_player');
+        const titleElem = document.querySelector('h1.ytd-watch-metadata, #title, ytd-watch-metadata h1');
+        const title = titleElem?.innerText?.trim() || '';
+
+        const playerState = player && typeof player.getPlayerState === 'function' ? player.getPlayerState() : null;
+        // YouTube player states: -1: UNSTARTED, 0: ENDED, 1: PLAYING, 2: PAUSED, 3: BUFFERING, 5: CUED
+
+        const currentTime = v && !isNaN(v.currentTime) ? Math.floor(v.currentTime) : 0;
+        const duration = v && !isNaN(v.duration) && v.duration > 0 ? Math.floor(v.duration) : null;
+        const isPaused = v ? v.paused : true;
+        const isEnded = v ? v.ended : false;
+
+        return {
+            title: title.substring(0, 60),
+            currentTime,
+            duration,
+            paused: isPaused,
+            ended: isEnded,
+            playerState,
+            hasVideo: !!v
+        };
+    }).catch(() => ({
+        title: '',
+        currentTime: 0,
+        duration: null,
+        paused: true,
+        ended: false,
+        playerState: null,
+        hasVideo: false
+    }));
+}
+
+/**
+ * Ensure video is actively playing, recover from ended/paused/stalled states
+ */
+async function ensureVideoPlaying(page, targetUrl, consecutiveStallCount = 0) {
     await handlePopupsAndAds(page);
+    await configurePlaylistAndAutoplay(page);
 
     try {
-        const isPaused = await page.evaluate(() => {
-            const v = document.querySelector('video');
-            return v ? v.paused : true;
-        });
+        const state = await getVideoState(page);
 
-        // Windows and macOS/iOS automatically autoplay video on load; skip spacebar toggle to avoid pausing
-        if (process.platform === 'win32' || process.platform === 'darwin') {
-            if (isPaused) {
-                console.log(`🍎/🪟 ${process.platform} platform: Video is paused, invoking HTML5 play directly (skipping Space toggle)...`);
-                await page.evaluate(() => {
-                    const v = document.querySelector('video');
-                    if (v && v.paused) v.play().catch(() => {});
-                });
-            }
-            return;
+        // Check if video is ended, stalled on NaN duration, or in ended player state
+        const isVideoEndedOrStalled = state.ended || state.playerState === 0 || (!state.duration && state.currentTime === 0);
+        const isPaused = state.paused || state.playerState === 2 || state.playerState === -1;
+
+        if (isVideoEndedOrStalled && consecutiveStallCount >= 2) {
+            console.log(`🔄 Playlist/Video ended or stalled at 0s/NaN. Restarting playlist navigation...`);
+            await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 60000 }).catch(() => {});
+            await page.waitForTimeout(5000);
+            await configurePlaylistAndAutoplay(page);
         }
 
-        // On Linux / other runners, press Space if paused
-        if (isPaused) {
-            console.log(`▶️ Video is paused. Pressing Space to start/resume playback...`);
-            // Focus player and press Space
-            await page.focus('#movie_player').catch(() => {});
-            await page.keyboard.press('Space');
-            await page.waitForTimeout(1500);
+        // If player is ended or replay button is visible, click replay / playVideo / nextVideo
+        if (state.playerState === 0 || state.ended) {
+            console.log(`🔁 Video ended. Triggering replay / next video in playlist...`);
+            await page.evaluate(() => {
+                const player = document.getElementById('movie_player');
+                if (player) {
+                    if (typeof player.nextVideo === 'function') player.nextVideo();
+                    if (typeof player.playVideo === 'function') player.playVideo();
+                }
+                const replayBtn = document.querySelector('.ytp-play-button[title*="Replay"], .ytp-replay-button, button[aria-label*="Replay"]');
+                if (replayBtn) replayBtn.click();
+            }).catch(() => {});
+            await page.waitForTimeout(2000);
+        }
 
-            // Double check and force HTML5 play if needed
+        if (isPaused || isVideoEndedOrStalled) {
+            console.log(`▶️ Video is paused/idle (playerState: ${state.playerState}). Resuming playback...`);
+
+            // 1. YouTube Player API call
+            await page.evaluate(() => {
+                const player = document.getElementById('movie_player');
+                if (player && typeof player.playVideo === 'function') {
+                    player.playVideo();
+                }
+            }).catch(() => {});
+
+            // 2. Click player play button if it indicates paused
+            const playButton = await page.$('.ytp-play-button[aria-label*="Play"], .ytp-play-button[title*="Play"]');
+            if (playButton && await playButton.isVisible()) {
+                await playButton.click().catch(() => {});
+            }
+
+            // 3. Focus player and press Space / 'k' key
+            await page.focus('#movie_player').catch(() => {});
+            await page.keyboard.press('k').catch(() => {});
+            await page.waitForTimeout(1000);
+
+            // 4. Fallback HTML5 play directly
             await page.evaluate(() => {
                 const v = document.querySelector('video');
                 if (v && v.paused) {
                     v.play().catch(() => {});
                 }
-            });
+            }).catch(() => {});
         }
-    } catch {}
+    } catch (err) {
+        console.warn(`⚠️ Warning in ensureVideoPlaying:`, err.message);
+    }
 }
 
 (async () => {
@@ -133,7 +239,16 @@ async function ensureVideoPlaying(page) {
     console.log(`📍 Current Public IP: ${ipInfo.ip} | Country: ${ipInfo.country} | Org: ${ipInfo.org}`);
 
     const launchOptions = {
-        headless: true
+        headless: true,
+        args: [
+            "--no-sandbox",
+            "--disable-blink-features=AutomationControlled",
+            "--autoplay-policy=no-user-gesture-required",
+            "--disable-background-timer-throttling",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-renderer-backgrounding",
+            "--disable-features=CalculateNativeWinOcclusion,PreloadMediaEngagementData,MediaEngagementBypassAutoplayPolicies"
+        ]
     };
 
     // Auto-detect installed system Chrome if Playwright's local cache is missing
@@ -175,12 +290,6 @@ async function ensureVideoPlaying(page) {
         }
     }
 
-    launchOptions.args = [
-        "--no-sandbox",
-        "--disable-blink-features=AutomationControlled",
-        "--autoplay-policy=no-user-gesture-required"
-    ];
-
     const browser = await chromium.launch(launchOptions);
     const context = await browser.newContext({
         viewport: { width: 1920, height: 1080 },
@@ -219,8 +328,9 @@ async function ensureVideoPlaying(page) {
         // Wait a few seconds for player elements to load
         await page.waitForTimeout(5000);
 
-        // Click spacebar and start playback
-        await ensureVideoPlaying(page);
+        // Ensure playback starts and playlist loop is configured
+        await configurePlaylistAndAutoplay(page);
+        await ensureVideoPlaying(page, targetUrl, 0);
 
         // Take initial screenshot (0m)
         await captureScreenshot("000m_start");
@@ -228,13 +338,28 @@ async function ensureVideoPlaying(page) {
         const startTime = Date.now();
         let lastScreenshotTime = startTime;
         let elapsedMins = 0;
+        let consecutiveStallCount = 0;
+        let lastKnownTime = -1;
 
         console.log(`\n⏳ Continuous 2-hour monitoring loop started at ${new Date().toISOString()}...`);
 
         while (Date.now() - startTime < totalDurationMs) {
             // Heartbeat every 30 seconds to maintain playback & dismiss popups/ads
             await page.waitForTimeout(30000);
-            await ensureVideoPlaying(page);
+
+            const state = await getVideoState(page);
+
+            // Track whether playback is progressing
+            if (state.currentTime === lastKnownTime && state.currentTime > 0) {
+                consecutiveStallCount++;
+            } else if (!state.duration || state.currentTime === 0) {
+                consecutiveStallCount++;
+            } else {
+                consecutiveStallCount = 0;
+            }
+            lastKnownTime = state.currentTime;
+
+            await ensureVideoPlaying(page, targetUrl, consecutiveStallCount);
 
             const now = Date.now();
             const totalElapsed = now - startTime;
@@ -244,18 +369,13 @@ async function ensureVideoPlaying(page) {
 
             // Log playback status every 5 minutes
             if (elapsedMins > 0 && elapsedMins % 5 === 0 && (totalElapsed % 60000 < 30000)) {
-                const videoStatus = await page.evaluate(() => {
-                    const v = document.querySelector('video');
-                    const title = document.querySelector('h1.ytd-watch-metadata, #title')?.innerText || 'Unknown';
-                    return {
-                        title: title.trim().substring(0, 60),
-                        currentTime: v ? Math.floor(v.currentTime) : 0,
-                        duration: v ? Math.floor(v.duration) : 0,
-                        paused: v ? v.paused : true
-                    };
-                }).catch(() => ({ title: 'Unknown', currentTime: 0, duration: 0, paused: true }));
+                const latestState = await getVideoState(page);
+                const isActuallyPlaying = !latestState.paused && latestState.duration > 0 && !latestState.ended;
+                const statusSymbol = isActuallyPlaying ? '▶️ Playing' : (latestState.ended ? '🔄 Ended / Replaying' : '⏸️ Paused / Buffering');
+                const durStr = latestState.duration ? `${latestState.duration}s` : 'Unknown';
+                const titleStr = latestState.title || '(Loading / Playlist Transition)';
 
-                console.log(`[${elapsedMins}m / ${DURATION_MINUTES}m] Status: ${videoStatus.paused ? '⏸️ Paused' : '▶️ Playing'} | Time: ${videoStatus.currentTime}s / ${videoStatus.duration}s | "${videoStatus.title}"`);
+                console.log(`[${elapsedMins}m / ${DURATION_MINUTES}m] Status: ${statusSymbol} | Time: ${latestState.currentTime}s / ${durStr} | "${titleStr}"`);
             }
 
             // Capture screenshot every SCREENSHOT_INTERVAL_MINUTES
