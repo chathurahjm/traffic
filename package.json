@@ -6,7 +6,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "monitor": "node youtube/monitor.js"
+    "monitor": "node youtube/monitor.js",
+    "vpngate": "node youtube/vpngate.js",
+    "monitor:vpngate": "node youtube/vpngate.js --export /tmp/vpngate.ovpn && node youtube/monitor.js"
   },
   "dependencies": {
     "express": "^4.21.2",

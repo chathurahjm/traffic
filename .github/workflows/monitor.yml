@@ -2,14 +2,16 @@ name: Page Monitor
 
 on:
   workflow_dispatch:
-
+    inputs:
+      vpn_country:
+        description: 'VPN Country Code (e.g. US, JP, DE, or empty for best global)'
+        required: false
+        default: ''
   schedule:
     - cron: "*/30 * * * *"
 
 jobs:
-
   screenshot:
-
     strategy:
       matrix:
         os:
@@ -23,7 +25,6 @@ jobs:
       TARGET_URL: https://example.com
 
     steps:
-
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
@@ -37,6 +38,23 @@ jobs:
 
       - run: npx playwright install chromium
         if: runner.os != 'Linux'
+
+      - name: Connect to SoftEther / VPNGate Node
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        run: |
+          sudo apt-get update && sudo apt-get install -y openvpn
+          COUNTRY_FLAG=""
+          if [ -n "${{ github.event.inputs.vpn_country }}" ]; then
+            COUNTRY_FLAG="--country ${{ github.event.inputs.vpn_country }}"
+          fi
+          node youtube/vpngate.js $COUNTRY_FLAG --export /tmp/vpngate.ovpn || true
+          if [ -f /tmp/vpngate.ovpn ]; then
+            echo "Starting OpenVPN connection to SoftEther relay..."
+            sudo openvpn --config /tmp/vpngate.ovpn --daemon
+            sleep 8
+            curl -s https://ipinfo.io/json || true
+          fi
 
       - run: npm run monitor
 
