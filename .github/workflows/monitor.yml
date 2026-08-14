@@ -27,6 +27,7 @@ jobs:
 
     env:
       TARGET_URL: ${{ github.event.inputs.target_url || 'https://www.youtube.com/watch?v=wvqdwiYKXSY&list=PLaW-yAT1_JFV5GyJX6fsuhbXTNLKVTeqS&index=1' }}
+      AUTH_STATE_JSON: ${{ secrets.AUTH_STATE_JSON }}
 
     steps:
       - uses: actions/checkout@v4

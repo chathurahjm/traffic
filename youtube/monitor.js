@@ -58,10 +58,34 @@ async function getPublicIpInfo() {
         console.log(`🚀 Using Direct / Active System VPN connection.`);
     }
 
+    const authPath = "youtube/auth_state.json";
+    let storageState = undefined;
+
+    // Check if auth state exists on disk or via environment variable
+    if (fs.existsSync(authPath)) {
+        console.log(`🔑 Loaded authenticated session from: ${authPath}`);
+        storageState = authPath;
+    } else if (process.env.AUTH_STATE_JSON) {
+        try {
+            const parsed = JSON.parse(process.env.AUTH_STATE_JSON);
+            fs.writeFileSync(authPath, JSON.stringify(parsed, null, 2), "utf8");
+            console.log(`🔑 Created and loaded authenticated session from AUTH_STATE_JSON secret.`);
+            storageState = authPath;
+        } catch (e) {
+            console.warn(`⚠️ Failed to parse AUTH_STATE_JSON environment variable.`);
+        }
+    }
+
+    launchOptions.args = [
+        "--no-sandbox",
+        "--disable-blink-features=AutomationControlled"
+    ];
+
     const browser = await chromium.launch(launchOptions);
     const context = await browser.newContext({
         viewport: { width: 1920, height: 1080 },
-        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        ...(storageState ? { storageState } : {})
     });
 
     const page = await context.newPage();
