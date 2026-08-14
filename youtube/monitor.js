@@ -78,12 +78,24 @@ async function ensureVideoPlaying(page) {
     await handlePopupsAndAds(page);
 
     try {
-        // Try pressing spacebar to toggle play
         const isPaused = await page.evaluate(() => {
             const v = document.querySelector('video');
             return v ? v.paused : true;
         });
 
+        // Windows automatically autoplays video on load; skip spacebar toggle to avoid pausing
+        if (process.platform === 'win32') {
+            if (isPaused) {
+                console.log(`🪟 Windows platform: Video is paused, invoking HTML5 play directly (skipping Space toggle)...`);
+                await page.evaluate(() => {
+                    const v = document.querySelector('video');
+                    if (v && v.paused) v.play().catch(() => {});
+                });
+            }
+            return;
+        }
+
+        // On Linux / macOS, press Space if paused
         if (isPaused) {
             console.log(`▶️ Video is paused. Pressing Space to start/resume playback...`);
             // Focus player and press Space
