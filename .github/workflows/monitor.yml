@@ -3,6 +3,10 @@ name: Page Monitor
 on:
   workflow_dispatch:
     inputs:
+      target_url:
+        description: 'Target URL to monitor'
+        required: false
+        default: 'https://www.youtube.com/watch?v=wvqdwiYKXSY&list=PLaW-yAT1_JFV5GyJX6fsuhbXTNLKVTeqS&index=1'
       vpn_country:
         description: 'VPN Country Code (e.g. US, JP, DE, or empty for best global)'
         required: false
@@ -22,7 +26,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     env:
-      TARGET_URL: https://example.com
+      TARGET_URL: ${{ github.event.inputs.target_url || 'https://www.youtube.com/watch?v=wvqdwiYKXSY&list=PLaW-yAT1_JFV5GyJX6fsuhbXTNLKVTeqS&index=1' }}
 
     steps:
       - uses: actions/checkout@v4
