@@ -12,10 +12,11 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "0 */3 * * *"
 
 jobs:
   screenshot:
+    timeout-minutes: 180
     strategy:
       matrix:
         os:
