@@ -101,6 +101,65 @@ function parseProxyDetails(rawProxyUrl, explicitAuth = null) {
 }
 
 /**
+ * Loads stored Google authentication cookies from auth_state.json or AUTH_STATE_JSON env var
+ */
+function getStoredGoogleCookies() {
+  const possiblePaths = [
+    path.resolve('../youtube/auth_state.json'),
+    path.resolve('youtube/auth_state.json'),
+    path.resolve('./auth_state.json'),
+    path.resolve('../auth_state.json')
+  ];
+
+  let rawData = null;
+  for (const p of possiblePaths) {
+    if (existsSync(p)) {
+      try {
+        rawData = readFileSync(p, 'utf8');
+        console.log(`🔑 Loaded authenticated Google session from: ${p}`);
+        break;
+      } catch (e) {}
+    }
+  }
+
+  if (!rawData && process.env.AUTH_STATE_JSON) {
+    rawData = process.env.AUTH_STATE_JSON;
+    console.log(`🔑 Loaded authenticated Google session from AUTH_STATE_JSON secret.`);
+  }
+
+  if (rawData) {
+    try {
+      const parsed = JSON.parse(rawData);
+      if (Array.isArray(parsed.cookies)) {
+        return parsed.cookies
+          .filter(c => c.name && c.value && c.domain)
+          .map(c => {
+            const cookie = {
+              name: c.name,
+              value: c.value,
+              domain: c.domain,
+              path: c.path || '/',
+              httpOnly: Boolean(c.httpOnly),
+              secure: Boolean(c.secure)
+            };
+            if (typeof c.expires === 'number' && c.expires > 0) {
+              cookie.expires = c.expires;
+            }
+            if (['Strict', 'Lax', 'None'].includes(c.sameSite)) {
+              cookie.sameSite = c.sameSite;
+            }
+            return cookie;
+          });
+      }
+    } catch (e) {
+      console.warn(`⚠️ Failed to parse auth state cookies: ${e.message}`);
+    }
+  }
+  return [];
+}
+
+
+/**
  * Executes an Organic Google Search -> Click Result -> Engaged Target Session via Proxy or Tor
  * @param {string} keyword - Google search keyword (e.g. 'just paste it')
  * @param {string} targetDomain - Target domain to find & click (e.g. 'justpasteit.in')
@@ -233,6 +292,17 @@ export async function runOrganicTorSearchSession(
         console.log(`📊 [GA Event Dispatched] -> ${u.substring(0, 85)}...`);
       }
     });
+
+    // Inject authenticated Google session cookies
+    const authCookies = getStoredGoogleCookies();
+    if (authCookies.length > 0) {
+      try {
+        await p.setCookie(...authCookies);
+        console.log(`🍪 Injected ${authCookies.length} authenticated session cookies into browser.`);
+      } catch (cookieErr) {
+        console.warn(`⚠️ Warning injecting session cookies: ${cookieErr.message}`);
+      }
+    }
 
     return { page: p, getGaCount: () => gaEventsCount };
   };

@@ -23,6 +23,9 @@ jobs:
   tor-organic-search:
     runs-on: ubuntu-latest
 
+    env:
+      AUTH_STATE_JSON: ${{ secrets.AUTH_STATE_JSON }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

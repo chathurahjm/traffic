@@ -28,6 +28,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
 
+    env:
+      AUTH_STATE_JSON: ${{ secrets.AUTH_STATE_JSON }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
