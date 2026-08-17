@@ -281,25 +281,23 @@ export async function runOrganicTorSearchSession(
       console.log(`📍 Landed on: "${await page.title().catch(() => 'Title')}" (${page.url()})`);
       await handlePopupsAndVerification(page);
 
-      // Verify we reached target domain
-      if (!page.url().includes(targetDomain)) {
-        console.warn(`⚠️ Not on target domain yet (${page.url()}). Navigating directly to target...`);
-        await page.goto(`https://${targetDomain}/`, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+      // Verify we reached target domain organically
+      if (page.url().includes(targetDomain)) {
+        console.log(`✅ Arrived at Target Page organically: "${await page.title().catch(() => 'Title')}" (${page.url()})`);
+
+        // Step 5: Simulate Engaged User Behavior (Dwell & Scroll)
+        console.log(`⏱️ Simulating engaged visitor session on target site for GA tracking...`);
+        for (let i = 0; i < 5; i++) {
+          await page.mouse.wheel(0, 200 + Math.floor(Math.random() * 150));
+          await page.waitForTimeout(2000 + Math.floor(Math.random() * 1000));
+        }
+
+        console.log(`📈 Organic Search GA Summary: Dispatched ${gaEventsCount} GA tracking events!`);
+      } else {
+        console.warn(`⚠️ Clicked search result but landed on: ${page.url()}`);
       }
-
-      console.log(`✅ Arrived at Target Page: "${await page.title().catch(() => 'Title')}" (${page.url()})`);
-
-      // Step 5: Simulate Engaged User Behavior (Dwell & Scroll)
-      console.log(`⏱️ Simulating engaged visitor session on target site for GA tracking...`);
-      for (let i = 0; i < 5; i++) {
-        await page.mouse.wheel(0, 200 + Math.floor(Math.random() * 150));
-        await page.waitForTimeout(2000 + Math.floor(Math.random() * 1000));
-      }
-
-      console.log(`📈 Organic Search GA Summary: Dispatched ${gaEventsCount} GA tracking events!`);
     } else {
-      console.warn(`⚠️ Target domain "${targetDomain}" not found in top Google SERP. Navigating directly...`);
-      await page.goto(`https://${targetDomain}/`, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+      console.warn(`⚠️ Target domain "${targetDomain}" was not found or clicked on Google SERP. Skipping direct navigation to preserve organic referral integrity.`);
     }
 
     console.log(`✨ Patchright Organic Search Session completed successfully!`);
