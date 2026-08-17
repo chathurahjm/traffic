@@ -1,4 +1,4 @@
-name: Multi-OS Organic Google Search Matrix
+name: SoftEther VPNGate Organic Google Search Matrix
 
 on:
   workflow_dispatch:
@@ -12,25 +12,25 @@ on:
         required: false
         default: 'justpasteit.in'
       sessions:
-        description: 'Sessions per OS Runner'
+        description: 'Sessions per Runner'
         required: false
         default: '7'
       vpn_country:
-        description: 'VPN Country Code (e.g. US, JP, DE, or empty for best global)'
+        description: 'Override VPN Country (leave empty to use matrix distribution)'
         required: false
         default: ''
   schedule:
-    # Triggers every 30 minutes (48 times/day x 3 OS runners x 7 sessions ≈ 1008 runs daily)
+    # Triggers every 30 minutes
     - cron: '*/30 * * * *'
 
 jobs:
   organic-search-matrix:
-    name: Organic Search on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    name: Organic Search (${{ matrix.country || 'Global-Fastest' }})
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        country: ['', 'US', 'JP', 'DE', 'KR']
 
     env:
       AUTH_STATE_JSON: ${{ secrets.AUTH_STATE_JSON }}
@@ -57,20 +57,23 @@ jobs:
           npm install
 
       - name: Connect to SoftEther / VPNGate Node
-        if: runner.os == 'Linux'
-        continue-on-error: true
         run: |
           sudo apt-get update && sudo apt-get install -y openvpn
+          TARGET_COUNTRY="${{ github.event.inputs.vpn_country || matrix.country }}"
           COUNTRY_FLAG=""
-          if [ -n "${{ github.event.inputs.vpn_country }}" ]; then
-            COUNTRY_FLAG="--country ${{ github.event.inputs.vpn_country }}"
+          if [ -n "$TARGET_COUNTRY" ]; then
+            COUNTRY_FLAG="--country $TARGET_COUNTRY"
           fi
-          node youtube/vpngate.js $COUNTRY_FLAG --export /tmp/vpngate.ovpn || true
+          echo "🌐 Finding top SoftEther VPNGate relay node for: ${TARGET_COUNTRY:-Global-Fastest}..."
+          node youtube/vpngate.js $COUNTRY_FLAG --export /tmp/vpngate.ovpn
           if [ -f /tmp/vpngate.ovpn ]; then
-            echo "Starting OpenVPN connection to SoftEther relay..."
+            echo "🚀 Starting OpenVPN connection to SoftEther relay..."
             sudo openvpn --config /tmp/vpngate.ovpn --daemon
-            sleep 8
+            sleep 10
+            echo "📍 Active SoftEther Outgoing IP & Geo:"
             curl -s https://ipinfo.io/json || true
+          else
+            echo "⚠️ Could not obtain SoftEther VPNGate config, continuing..."
           fi
 
       - name: Run Organic Search Sessions
@@ -82,6 +85,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: organic-search-videos-${{ matrix.os }}
+          name: organic-search-videos-${{ matrix.country || 'global' }}
           path: tor_demo/videos/*.mp4
           retention-days: 7
+
