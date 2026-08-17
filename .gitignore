@@ -4,4 +4,8 @@ node_modules/
 screenshots/
 *.ovpn
 youtube/auth_state.json
+tor_demo/auth_state*.json
+tor_demo/temp_auth_state.json
+tor_demo/videos/
+tor_demo/temp_user_data*
 
