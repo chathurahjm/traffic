@@ -69,14 +69,32 @@ async function handlePopupsAndVerification(page) {
     const checkbox = recaptchaFrame.locator('.recaptcha-checkbox-border, #recaptcha-anchor, .rc-anchor-checkbox').first();
     if (await checkbox.isVisible({ timeout: 2000 }).catch(() => false)) {
       console.log(`🔲 Found reCAPTCHA checkbox — executing automated human-like click...`);
-      // Human-like pause before clicking
-      await page.waitForTimeout(800 + Math.random() * 1200);
+      await page.waitForTimeout(800 + Math.random() * 1000);
       await checkbox.click().catch(() => {});
-      console.log(`⏳ Waiting for reCAPTCHA validation...`);
-      await page.waitForTimeout(3500);
+      console.log(`⏳ Checkbox clicked, waiting for validation or challenge modal...`);
+      await page.waitForTimeout(2500);
     }
 
-    // 3. Cloudflare Turnstile Checkbox Auto-Click
+    // 3. reCAPTCHA Challenge Modal & Audio Button Click
+    const challengeFrames = [
+      page.frameLocator('iframe[src*="recaptcha/api2/bframe"]').first(),
+      page.frameLocator('iframe[src*="bframe"]').first(),
+      page.frameLocator('iframe[title*="recaptcha challenge"]').first()
+    ];
+
+    for (const bframe of challengeFrames) {
+      const audioBtn = bframe.locator('#recaptcha-audio-button, button.rc-button-audio, button[title*="audio"], button[aria-label*="audio"]').first();
+      if (await audioBtn.isVisible({ timeout: 2500 }).catch(() => false)) {
+        console.log(`🎙️ Found reCAPTCHA Audio Challenge button — clicking...`);
+        await page.waitForTimeout(1000 + Math.random() * 1000);
+        await audioBtn.click().catch(() => {});
+        console.log(`✅ Successfully clicked reCAPTCHA Audio Challenge button!`);
+        await page.waitForTimeout(3000);
+        break;
+      }
+    }
+
+    // 4. Cloudflare Turnstile Checkbox Auto-Click
     const turnstileFrame = page.frameLocator('iframe[src*="challenges.cloudflare.com"], iframe[src*="turnstile"]').first();
     const turnstileBox = turnstileFrame.locator('input[type="checkbox"], .cb-i, label').first();
     if (await turnstileBox.isVisible({ timeout: 1500 }).catch(() => false)) {
@@ -86,7 +104,7 @@ async function handlePopupsAndVerification(page) {
       await page.waitForTimeout(3500);
     }
 
-    // 4. Generic "Verify / I am human" buttons on page level
+    // 5. Generic "Verify / I am human" buttons on page level
     const pageVerifyButtons = [
       'button[id*="verify"]',
       'button[id*="submit"]',
@@ -211,6 +229,14 @@ export async function runOrganicTorSearchSession(
     // Step 3: Type Search Keyword
     console.log(`⌨️ Typing search query: "${keyword}"...`);
     const searchBox = page.locator('textarea[name="q"], input[name="q"]').first();
+    const isVisible = await searchBox.isVisible({ timeout: 4000 }).catch(() => false);
+    if (!isVisible) {
+      console.log(`⚠️ Search box not immediately visible (URL: ${page.url()}). Handling verification prompts...`);
+      await handlePopupsAndVerification(page);
+      await page.waitForTimeout(2000);
+      await handlePopupsAndVerification(page);
+    }
+
     await searchBox.waitFor({ state: 'visible', timeout: 15000 });
     await searchBox.click();
     await searchBox.pressSequentially(keyword, { delay: 75 + Math.floor(Math.random() * 40) });
