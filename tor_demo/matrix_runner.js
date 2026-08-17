@@ -31,9 +31,9 @@ async function main() {
       await runOrganicTorSearchSession(
         keyword,
         targetDomain,
-        null, // Direct connection (no proxy required)
+        null, // Direct connection / System SoftEther VPN
         null,
-        { headless: isHeadless, enableFallback: true, recordVideo: true }
+        { headless: isHeadless, enableFallback: false, recordVideo: true }
       );
       successfulSessions++;
     } catch (err) {

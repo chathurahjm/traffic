@@ -15,6 +15,10 @@ on:
         description: 'Sessions per OS Runner'
         required: false
         default: '7'
+      vpn_country:
+        description: 'VPN Country Code (e.g. US, JP, DE, or empty for best global)'
+        required: false
+        default: ''
   schedule:
     # Triggers every 30 minutes (48 times/day x 3 OS runners x 7 sessions ≈ 1008 runs daily)
     - cron: '*/30 * * * *'
@@ -45,6 +49,23 @@ jobs:
         uses: browser-actions/setup-chrome@v1
         with:
           chrome-version: stable
+
+      - name: Connect to SoftEther / VPNGate Node
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        run: |
+          sudo apt-get update && sudo apt-get install -y openvpn
+          COUNTRY_FLAG=""
+          if [ -n "${{ github.event.inputs.vpn_country }}" ]; then
+            COUNTRY_FLAG="--country ${{ github.event.inputs.vpn_country }}"
+          fi
+          node youtube/vpngate.js $COUNTRY_FLAG --export /tmp/vpngate.ovpn || true
+          if [ -f /tmp/vpngate.ovpn ]; then
+            echo "Starting OpenVPN connection to SoftEther relay..."
+            sudo openvpn --config /tmp/vpngate.ovpn --daemon
+            sleep 8
+            curl -s https://ipinfo.io/json || true
+          fi
 
       - name: Install Node dependencies
         run: |
