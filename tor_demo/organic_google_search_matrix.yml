@@ -44,8 +44,7 @@ jobs:
         with:
           node-version: 20
 
-      - name: Setup Chrome (Linux & macOS)
-        if: matrix.os != 'windows-latest'
+      - name: Setup Chrome
         uses: browser-actions/setup-chrome@v1
         with:
           chrome-version: stable

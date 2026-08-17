@@ -9,25 +9,62 @@ import path from 'path';
 // Enable stealth plugin
 puppeteerExtra.use(StealthPlugin());
 
-// Find local browser executable
+// Find local browser executable across macOS, Linux, and Windows
 function findBrowserExecutable() {
+  // Check environment variables first
+  const envCandidates = [
+    process.env.CHROME_BIN,
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+    process.env.CHROME_PATH,
+    process.env.GOOGLE_CHROME_BIN
+  ].filter(Boolean);
+
+  for (const envP of envCandidates) {
+    if (existsSync(envP)) return envP;
+  }
+
   const paths = [
+    // Windows paths
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Google\\Chrome\\Application\\chrome.exe') : null,
+    process.env.PROGRAMFILES ? path.join(process.env.PROGRAMFILES, 'Google\\Chrome\\Application\\chrome.exe') : null,
+    process.env['PROGRAMFILES(X86)'] ? path.join(process.env['PROGRAMFILES(X86)'], 'Google\\Chrome\\Application\\chrome.exe') : null,
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Microsoft\\Edge\\Application\\msedge.exe') : null,
+
+    // macOS paths
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
     '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
+
+    // Linux paths
     '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
     '/usr/bin/chromium',
-    '/usr/bin/chromium-browser'
-  ];
+    '/usr/bin/chromium-browser',
+    '/snap/bin/chromium'
+  ].filter(Boolean);
 
   for (const p of paths) {
     if (existsSync(p)) return p;
   }
 
-  try {
-    const whichChrome = execSync('which google-chrome || which chromium', { encoding: 'utf8' }).trim();
-    if (whichChrome && existsSync(whichChrome)) return whichChrome;
-  } catch (e) {
-    // Ignore error
+  // Windows command lookup
+  if (process.platform === 'win32') {
+    try {
+      const whereChrome = execSync('where.exe chrome || where.exe msedge', { encoding: 'utf8' }).split(/\r?\n/)[0].trim();
+      if (whereChrome && existsSync(whereChrome)) return whereChrome;
+    } catch (e) {}
+  } else {
+    // Linux / macOS command lookup
+    try {
+      const whichChrome = execSync('which google-chrome || which google-chrome-stable || which chromium || which chromium-browser || which brave || which msedge', { encoding: 'utf8' }).trim();
+      if (whichChrome && existsSync(whichChrome)) return whichChrome;
+    } catch (e) {}
   }
 
   throw new Error('Chrome/Chromium executable not found. Please install Google Chrome or Chromium.');
