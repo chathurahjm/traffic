@@ -64,7 +64,7 @@ async function handlePopupsAndVerification(page) {
       }
     }
 
-    // 2. reCAPTCHA iframe detection
+    // 2. reCAPTCHA checkbox detection
     const recaptchaFrame = page.frameLocator('iframe[src*="recaptcha"], iframe[title*="reCAPTCHA"]').first();
     const checkbox = recaptchaFrame.locator('.recaptcha-checkbox-border, #recaptcha-anchor, .rc-anchor-checkbox').first();
     if (await checkbox.isVisible({ timeout: 1500 }).catch(() => false)) {
@@ -74,7 +74,17 @@ async function handlePopupsAndVerification(page) {
       await page.waitForTimeout(3000);
     }
 
-    // 3. Turnstile iframe detection
+    // 3. reCAPTCHA challenge modal (Buster audio solver click emulation)
+    const challengeFrame = page.frameLocator('iframe[title*="challenge"], iframe[src*="bframe"]').first();
+    const audioButton = challengeFrame.locator('#recaptcha-audio-button, button.rc-button-audio').first();
+    if (await audioButton.isVisible({ timeout: 1500 }).catch(() => false)) {
+      console.log(`🎙️ Found reCAPTCHA audio solver button — clicking...`);
+      await page.waitForTimeout(1000 + Math.random() * 1000);
+      await audioButton.click().catch(() => {});
+      await page.waitForTimeout(2500);
+    }
+
+    // 4. Cloudflare Turnstile iframe detection
     const turnstileFrame = page.frameLocator('iframe[src*="challenges.cloudflare.com"], iframe[src*="turnstile"]').first();
     const turnstileBox = turnstileFrame.locator('input[type="checkbox"], .cb-i, label').first();
     if (await turnstileBox.isVisible({ timeout: 1500 }).catch(() => false)) {
