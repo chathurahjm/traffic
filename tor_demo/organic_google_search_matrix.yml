@@ -56,6 +56,11 @@ jobs:
           cd tor_demo
           npm install
 
+      - name: Install Patchright Browser
+        run: |
+          cd tor_demo
+          npx patchright install chromium --with-deps
+
       - name: Connect to SoftEther / VPNGate Node
         run: |
           sudo apt-get update && sudo apt-get install -y openvpn
@@ -86,6 +91,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: organic-search-videos-${{ matrix.country || 'global' }}
-          path: tor_demo/videos/*.mp4
+          path: |
+            tor_demo/videos/*.mp4
+            tor_demo/videos/*.webm
           retention-days: 7
 

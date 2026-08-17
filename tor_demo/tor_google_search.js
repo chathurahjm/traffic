@@ -1,673 +1,278 @@
-import puppeteerCore from 'puppeteer-core';
-import puppeteerExtra from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
-import { PuppeteerScreenRecorder } from 'puppeteer-screen-recorder';
-import { existsSync, readFileSync, mkdirSync } from 'fs';
-import { execSync } from 'child_process';
+import { chromium } from 'patchright';
+import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
-// Enable stealth plugin
-puppeteerExtra.use(StealthPlugin());
-
-// Find local browser executable across macOS, Linux, and Windows
-function findBrowserExecutable() {
-  // Check environment variables first
-  const envCandidates = [
-    process.env.CHROME_BIN,
-    process.env.PUPPETEER_EXECUTABLE_PATH,
-    process.env.CHROME_PATH,
-    process.env.GOOGLE_CHROME_BIN
-  ].filter(Boolean);
-
-  for (const envP of envCandidates) {
-    if (existsSync(envP)) return envP;
-  }
-
-  const paths = [
-    // Windows paths
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Google\\Chrome\\Application\\chrome.exe') : null,
-    process.env.PROGRAMFILES ? path.join(process.env.PROGRAMFILES, 'Google\\Chrome\\Application\\chrome.exe') : null,
-    process.env['PROGRAMFILES(X86)'] ? path.join(process.env['PROGRAMFILES(X86)'], 'Google\\Chrome\\Application\\chrome.exe') : null,
-    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Microsoft\\Edge\\Application\\msedge.exe') : null,
-
-    // macOS paths
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary',
-    '/Applications/Chromium.app/Contents/MacOS/Chromium',
-    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
-    '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
-
-    // Linux paths
-    '/usr/bin/google-chrome',
-    '/usr/bin/google-chrome-stable',
-    '/usr/bin/chromium',
-    '/usr/bin/chromium-browser',
-    '/snap/bin/chromium'
-  ].filter(Boolean);
-
-  for (const p of paths) {
-    if (existsSync(p)) return p;
-  }
-
-  // Windows command lookup
-  if (process.platform === 'win32') {
-    try {
-      const whereChrome = execSync('where.exe chrome || where.exe msedge', { encoding: 'utf8' }).split(/\r?\n/)[0].trim();
-      if (whereChrome && existsSync(whereChrome)) return whereChrome;
-    } catch (e) {}
-  } else {
-    // Linux / macOS command lookup
-    try {
-      const whichChrome = execSync('which google-chrome || which google-chrome-stable || which chromium || which chromium-browser || which brave || which msedge', { encoding: 'utf8' }).trim();
-      if (whichChrome && existsSync(whichChrome)) return whichChrome;
-    } catch (e) {}
-  }
-
-  throw new Error('Chrome/Chromium executable not found. Please install Google Chrome or Chromium.');
-}
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 /**
- * Gets a fresh list of proxies from search_config.json or config.json
+ * Load authenticated session state (Playwright/Patchright storageState)
  */
-function getProxyList() {
-  const proxies = [];
-  try {
-    const configPath = path.resolve('../search_config.json');
-    const rootConfigPath = path.resolve('../config.json');
-    
-    let fileToRead = existsSync(configPath) ? configPath : (existsSync(rootConfigPath) ? rootConfigPath : null);
-    if (fileToRead) {
-      const data = JSON.parse(readFileSync(fileToRead, 'utf8'));
-      if (Array.isArray(data.proxies) && data.proxies.length > 0) {
-        data.proxies.forEach(p => {
-          if (!p.includes('127.0.0.1') && !p.includes('localhost')) {
-            const formatted = p.startsWith('socks5://') || p.startsWith('http://') || p.startsWith('https://') ? p : `socks5://${p}`;
-            proxies.push(formatted);
-          }
-        });
-      }
-    }
-  } catch (e) {
-    // Ignore
-  }
-  return proxies;
-}
-
-function getFallbackProxy(excludeProxies = []) {
-  const list = getProxyList();
-  const available = list.filter(p => !excludeProxies.includes(p));
-  if (available.length > 0) {
-    return available[Math.floor(Math.random() * available.length)];
-  }
-  return null;
-}
-
-/**
- * Parses proxy URL strings to separate proxy server address from embedded credentials
- */
-function parseProxyDetails(rawProxyUrl, explicitAuth = null) {
-  if (!rawProxyUrl) return { proxyServer: null, auth: explicitAuth };
-  let proxyServer = rawProxyUrl;
-  let auth = explicitAuth ? { ...explicitAuth } : null;
-
-  try {
-    let urlString = rawProxyUrl;
-    if (!urlString.includes('://')) {
-      urlString = `http://${urlString}`;
-    }
-    const parsed = new URL(urlString);
-    if (parsed.username || parsed.password) {
-      auth = auth || {
-        username: decodeURIComponent(parsed.username),
-        password: decodeURIComponent(parsed.password)
-      };
-      parsed.username = '';
-      parsed.password = '';
-      proxyServer = parsed.toString().replace(/\/$/, '');
-    } else {
-      proxyServer = urlString;
-    }
-  } catch (e) {
-    proxyServer = rawProxyUrl;
-  }
-  return { proxyServer, auth };
-}
-
-/**
- * Loads stored Google authentication cookies from auth_state.json or AUTH_STATE_JSON env var
- */
-function getStoredGoogleCookies() {
+function getStorageStatePath() {
   const possiblePaths = [
-    path.resolve('../youtube/auth_state.json'),
+    path.resolve(__dirname, '../youtube/auth_state.json'),
+    path.resolve(__dirname, 'youtube/auth_state.json'),
+    path.resolve(__dirname, 'auth_state.json'),
     path.resolve('youtube/auth_state.json'),
-    path.resolve('./auth_state.json'),
-    path.resolve('../auth_state.json')
+    path.resolve('auth_state.json')
   ];
 
-  let rawData = null;
   for (const p of possiblePaths) {
-    if (existsSync(p)) {
-      try {
-        rawData = readFileSync(p, 'utf8');
-        console.log(`🔑 Loaded authenticated Google session from: ${p}`);
-        break;
-      } catch (e) {}
+    if (fs.existsSync(p)) {
+      console.log(`🔑 Loaded authenticated Google session from: ${p}`);
+      return p;
     }
   }
 
-  if (!rawData && process.env.AUTH_STATE_JSON) {
-    rawData = process.env.AUTH_STATE_JSON;
-    console.log(`🔑 Loaded authenticated Google session from AUTH_STATE_JSON secret.`);
-  }
-
-  if (rawData) {
+  if (process.env.AUTH_STATE_JSON) {
     try {
-      const parsed = JSON.parse(rawData);
-      if (Array.isArray(parsed.cookies)) {
-        return parsed.cookies
-          .filter(c => c.name && c.value && c.domain)
-          .map(c => {
-            const cookie = {
-              name: c.name,
-              value: c.value,
-              domain: c.domain,
-              path: c.path || '/',
-              httpOnly: Boolean(c.httpOnly),
-              secure: Boolean(c.secure)
-            };
-            if (typeof c.expires === 'number' && c.expires > 0) {
-              cookie.expires = c.expires;
-            }
-            if (['Strict', 'Lax', 'None'].includes(c.sameSite)) {
-              cookie.sameSite = c.sameSite;
-            }
-            return cookie;
-          });
-      }
+      const parsed = JSON.parse(process.env.AUTH_STATE_JSON);
+      const tmpPath = path.resolve(__dirname, 'temp_auth_state.json');
+      fs.writeFileSync(tmpPath, JSON.stringify(parsed, null, 2), 'utf8');
+      console.log(`🔑 Created and loaded authenticated session from AUTH_STATE_JSON secret.`);
+      return tmpPath;
     } catch (e) {
-      console.warn(`⚠️ Failed to parse auth state cookies: ${e.message}`);
+      console.warn(`⚠️ Failed to parse AUTH_STATE_JSON secret: ${e.message}`);
     }
   }
-  return [];
+
+  return undefined;
 }
 
+/**
+ * Detects and handles consent dialogs or verification prompts
+ */
+async function handlePopupsAndVerification(page) {
+  try {
+    // 1. Consent buttons
+    const consentSelectors = [
+      'button#L2AGLb',
+      'button:has-text("Accept all")',
+      'button:has-text("I agree")',
+      'button:has-text("Agree")',
+      'button[aria-label*="Accept"]',
+      'form[action*="consent"] button'
+    ];
+    for (const selector of consentSelectors) {
+      const btn = page.locator(selector).first();
+      if (await btn.isVisible({ timeout: 1500 }).catch(() => false)) {
+        console.log(`🍪 Dismissing Google consent prompt (${selector})...`);
+        await btn.click().catch(() => {});
+        await page.waitForTimeout(1000);
+        break;
+      }
+    }
+
+    // 2. reCAPTCHA iframe detection
+    const recaptchaFrame = page.frameLocator('iframe[src*="recaptcha"], iframe[title*="reCAPTCHA"]').first();
+    const checkbox = recaptchaFrame.locator('.recaptcha-checkbox-border, #recaptcha-anchor, .rc-anchor-checkbox').first();
+    if (await checkbox.isVisible({ timeout: 1500 }).catch(() => false)) {
+      console.log(`🔲 Found reCAPTCHA checkbox — attempting click...`);
+      await page.waitForTimeout(1000 + Math.random() * 1500);
+      await checkbox.click().catch(() => {});
+      await page.waitForTimeout(3000);
+    }
+
+    // 3. Turnstile iframe detection
+    const turnstileFrame = page.frameLocator('iframe[src*="challenges.cloudflare.com"], iframe[src*="turnstile"]').first();
+    const turnstileBox = turnstileFrame.locator('input[type="checkbox"], .cb-i, label').first();
+    if (await turnstileBox.isVisible({ timeout: 1500 }).catch(() => false)) {
+      console.log(`🔲 Found Turnstile checkbox — attempting click...`);
+      await page.waitForTimeout(1000 + Math.random() * 1500);
+      await turnstileBox.click().catch(() => {});
+      await page.waitForTimeout(3000);
+    }
+  } catch (e) {
+    // Ignore verification handler errors
+  }
+}
 
 /**
- * Executes an Organic Google Search -> Click Result -> Engaged Target Session via Proxy or Tor
+ * Executes an Organic Google Search -> Click Result -> Engaged Target Session using Patchright
  * @param {string} keyword - Google search keyword (e.g. 'just paste it')
  * @param {string} targetDomain - Target domain to find & click (e.g. 'justpasteit.in')
- * @param {string} socksProxy - Proxy endpoint URL (e.g. http://1.2.3.4:8080, socks5://127.0.0.1:9050)
+ * @param {string} [socksProxy] - Optional proxy endpoint URL (e.g. socks5://127.0.0.1:9050)
  * @param {{username?: string, password?: string}} [auth] - Optional proxy auth
- * @param {{headless?: boolean, enableFallback?: boolean, recordVideo?: boolean}} [options] - Configuration options
+ * @param {{headless?: boolean, enableFallback?: boolean, recordVideo?: boolean}} [options] - Options
  */
 export async function runOrganicTorSearchSession(
   keyword = 'just paste it',
   targetDomain = 'justpasteit.in',
-  socksProxy = 'socks5://127.0.0.1:9050',
+  socksProxy = null,
   auth = null,
-  options = { headless: false, enableFallback: true, recordVideo: true }
+  options = { headless: false, enableFallback: false, recordVideo: true }
 ) {
   const isHeadless = options.headless ?? false;
-  const parsedProxy = parseProxyDetails(socksProxy, auth);
-  let activeProxy = parsedProxy.proxyServer;
-  let activeAuth = parsedProxy.auth;
+  const videosDir = path.resolve(__dirname, 'videos');
+  if (!fs.existsSync(videosDir)) {
+    fs.mkdirSync(videosDir, { recursive: true });
+  }
 
   console.log(`\n===================================================`);
-  console.log(`🔍 Organic Google Search Session via Proxy / Tor`);
+  console.log(`🛡️ Patchright Undetected Organic Google Search Session`);
   console.log(`🔑 Keyword: "${keyword}"`);
   console.log(`🎯 Target Domain: "${targetDomain}"`);
-  console.log(`🌐 Proxy: ${activeProxy || 'Direct Connection'}`);
-  console.log(`🖥️ Mode: Headless ${isHeadless}`);
+  console.log(`🌐 Proxy: ${socksProxy || 'Direct / Active SoftEther VPN'}`);
+  console.log(`🖥️ Mode: ${isHeadless ? 'Headless' : 'Visible UI'}`);
   console.log(`===================================================`);
 
-  const executablePath = findBrowserExecutable();
-  console.log(`📍 Browser Binary: ${executablePath}`);
+  const storageState = getStorageStatePath();
 
-  const launchBrowser = async (proxyUrl) => {
-    const launchArgs = [
+  const launchOptions = {
+    headless: isHeadless,
+    args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
-      '--disable-web-security',
-      '--ignore-certificate-errors',
-      '--ignore-certificate-errors-spki-list',
-      '--window-size=1366,768',
       '--disable-blink-features=AutomationControlled',
-      '--disable-features=IsolateOrigins,site-per-process'
-    ];
-    if (proxyUrl) {
-      launchArgs.push(`--proxy-server=${proxyUrl}`);
-    }
-
-    return await puppeteerExtra.launch({
-      executablePath,
-      headless: isHeadless,
-      ignoreHTTPSErrors: true,
-      ignoreDefaultArgs: ['--enable-automation'],
-      defaultViewport: { width: 1366, height: 768 },
-      args: launchArgs
-    });
+      '--window-size=1366,768'
+    ]
   };
 
-  let browser;
-  try {
-    browser = await launchBrowser(activeProxy);
-  } catch (e) {
-    console.error(`❌ Failed to launch browser with proxy ${activeProxy}:`, e.message);
-    return;
+  if (socksProxy) {
+    launchOptions.proxy = {
+      server: socksProxy,
+      username: auth?.username,
+      password: auth?.password
+    };
   }
 
-  let recorder = null;
-  let videoPath = null;
+  const browser = await chromium.launch(launchOptions);
 
-  const setupPage = async (b) => {
-    const p = await b.newPage();
-    await p.setViewport({ width: 1366, height: 768 });
-
-    // Comprehensive stealth: Override all bot-detection signals
-    await p.evaluateOnNewDocument(() => {
-      // 1. Remove webdriver flag
-      Object.defineProperty(navigator, 'webdriver', { get: () => false });
-
-      // 2. Fake plugins array (real Chrome has plugins)
-      Object.defineProperty(navigator, 'plugins', {
-        get: () => [
-          { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
-          { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
-          { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' }
-        ]
-      });
-
-      // 3. Fake languages
-      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-
-      // 4. Fake platform
-      Object.defineProperty(navigator, 'platform', { get: () => 'MacIntel' });
-
-      // 5. Override permissions query
-      const originalQuery = window.navigator.permissions.query;
-      window.navigator.permissions.query = (parameters) =>
-        parameters.name === 'notifications'
-          ? Promise.resolve({ state: Notification.permission })
-          : originalQuery(parameters);
-
-      // 6. Fake chrome runtime (headless Chrome is missing this)
-      window.chrome = { runtime: {}, loadTimes: () => ({}), csi: () => ({}) };
-
-      // 7. Override toString to hide modified functions
-      const fnToStr = Function.prototype.toString;
-      const proxyHandler = {
-        apply: function (target, thisArg, args) {
-          if (args[0] === navigator.permissions.query) {
-            return 'function query() { [native code] }';
-          }
-          return fnToStr.call(args[0]);
-        }
-      };
-      // Safe: only wrap if not already proxied
-      try { Function.prototype.toString = new Proxy(fnToStr, proxyHandler); } catch (e) {}
-    });
-
-    await p.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36');
-
-    // Set realistic headers
-    await p.setExtraHTTPHeaders({
+  const contextOptions = {
+    viewport: { width: 1366, height: 768 },
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+    locale: 'en-US',
+    timezoneId: 'America/New_York',
+    extraHTTPHeaders: {
       'Accept-Language': 'en-US,en;q=0.9',
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
-    });
-
-    // GA Event Monitoring
-    let gaEventsCount = 0;
-    p.on('request', (req) => {
-      const u = req.url();
-      if (u.includes('google-analytics.com') || u.includes('analytics.google.com') || u.includes('/g/collect')) {
-        gaEventsCount++;
-        console.log(`📊 [GA Event Dispatched] -> ${u.substring(0, 85)}...`);
-      }
-    });
-
-    // Inject authenticated Google session cookies
-    const authCookies = getStoredGoogleCookies();
-    if (authCookies.length > 0) {
-      try {
-        await p.setCookie(...authCookies);
-        console.log(`🍪 Injected ${authCookies.length} authenticated session cookies into browser.`);
-      } catch (cookieErr) {
-        console.warn(`⚠️ Warning injecting session cookies: ${cookieErr.message}`);
-      }
-    }
-
-    return { page: p, getGaCount: () => gaEventsCount };
+    },
+    ...(storageState ? { storageState } : {})
   };
 
-  /**
-   * Detects and attempts to handle human verification challenges
-   * (Google reCAPTCHA checkbox, Cloudflare Turnstile, consent pages)
-   */
-  const handleHumanVerification = async (page) => {
-    console.log(`🔍 Checking for human verification challenges...`);
-    await new Promise(r => setTimeout(r, 2000)); // Wait for any challenge to render
+  if (options.recordVideo !== false) {
+    contextOptions.recordVideo = {
+      dir: videosDir,
+      size: { width: 1366, height: 768 }
+    };
+  }
 
-    // Check page content for verification indicators
-    const pageContent = await page.content().catch(() => '');
-    const pageUrl = page.url();
+  const context = await browser.newContext(contextOptions);
+  const page = await context.newPage();
 
-    const isVerificationPage = 
-      pageContent.includes('recaptcha') ||
-      pageContent.includes('g-recaptcha') ||
-      pageContent.includes('captcha') ||
-      pageContent.includes('verify you are human') ||
-      pageContent.includes('are you a robot') ||
-      pageContent.includes('unusual traffic') ||
-      pageContent.includes('cf-turnstile') ||
-      pageContent.includes('challenge-platform') ||
-      pageUrl.includes('/sorry/') ||   // Google's CAPTCHA page
-      pageUrl.includes('consent.google');
-
-    if (!isVerificationPage) {
-      console.log(`✅ No verification challenge detected.`);
-      return false;
+  // Track Google Analytics events
+  let gaEventsCount = 0;
+  page.on('request', (req) => {
+    const u = req.url();
+    if (u.includes('google-analytics.com') || u.includes('analytics.google.com') || u.includes('/g/collect')) {
+      gaEventsCount++;
+      console.log(`📊 [GA Event Dispatched] -> ${u.substring(0, 85)}...`);
     }
-
-    console.log(`⚠️ Human verification page detected! URL: ${pageUrl}`);
-    console.log(`🤖 Attempting to solve verification...`);
-
-    // Strategy 1: Try clicking reCAPTCHA checkbox inside iframe
-    try {
-      const recaptchaFrame = await page.$('iframe[src*="recaptcha"], iframe[title*="reCAPTCHA"]');
-      if (recaptchaFrame) {
-        console.log(`🔲 Found reCAPTCHA iframe — attempting checkbox click...`);
-        const frame = await recaptchaFrame.contentFrame();
-        if (frame) {
-          // Human-like delay before clicking
-          await new Promise(r => setTimeout(r, 1000 + Math.random() * 2000));
-          const checkbox = await frame.$('.recaptcha-checkbox-border, #recaptcha-anchor, .rc-anchor-checkbox');
-          if (checkbox) {
-            // Move mouse naturally to the checkbox area
-            const box = await checkbox.boundingBox();
-            if (box) {
-              await page.mouse.move(
-                box.x + box.width / 2 + (Math.random() * 10 - 5),
-                box.y + box.height / 2 + (Math.random() * 10 - 5),
-                { steps: 10 + Math.floor(Math.random() * 10) }
-              );
-              await new Promise(r => setTimeout(r, 300 + Math.random() * 500));
-            }
-            await checkbox.click();
-            console.log(`✅ Clicked reCAPTCHA checkbox!`);
-            await new Promise(r => setTimeout(r, 3000)); // Wait for verification
-            await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {});
-            return true;
-          }
-        }
-      }
-    } catch (e) {
-      console.log(`⚠️ reCAPTCHA iframe attempt failed: ${e.message}`);
-    }
-
-    // Strategy 2: Try clicking Cloudflare Turnstile checkbox
-    try {
-      const turnstileFrame = await page.$('iframe[src*="challenges.cloudflare.com"], iframe[src*="turnstile"]');
-      if (turnstileFrame) {
-        console.log(`🔲 Found Cloudflare Turnstile — attempting click...`);
-        const frame = await turnstileFrame.contentFrame();
-        if (frame) {
-          await new Promise(r => setTimeout(r, 1500 + Math.random() * 1500));
-          const checkbox = await frame.$('input[type="checkbox"], .cb-i, label');
-          if (checkbox) {
-            await checkbox.click();
-            console.log(`✅ Clicked Turnstile checkbox!`);
-            await new Promise(r => setTimeout(r, 4000));
-            await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {});
-            return true;
-          }
-        }
-      }
-    } catch (e) {
-      console.log(`⚠️ Turnstile attempt failed: ${e.message}`);
-    }
-
-    // Strategy 3: Try clicking any visible "verify" / "I'm not a robot" button on the page itself
-    try {
-      const verifyClicked = await page.evaluate(() => {
-        const selectors = [
-          'button[id*="verify"]', 'button[id*="submit"]',
-          'input[type="submit"][value*="Verify"]',
-          'input[type="submit"][value*="Submit"]',
-          'a[href*="verify"]',
-          '#challenge-form button', '#challenge-form input[type="submit"]',
-          'button:not([disabled])'
-        ];
-        for (const sel of selectors) {
-          const el = document.querySelector(sel);
-          if (el && el.offsetParent !== null) {
-            el.click();
-            return sel;
-          }
-        }
-        return null;
-      });
-      if (verifyClicked) {
-        console.log(`✅ Clicked page-level verify button: ${verifyClicked}`);
-        await new Promise(r => setTimeout(r, 3000));
-        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {});
-        return true;
-      }
-    } catch (e) {
-      console.log(`⚠️ Page-level verify attempt failed: ${e.message}`);
-    }
-
-    console.log(`❌ Could not automatically solve verification challenge.`);
-    console.log(`📸 Taking screenshot of verification page for debugging...`);
-    try {
-      const screenshotPath = path.resolve('./videos', `verification_${Date.now()}.png`);
-      await page.screenshot({ path: screenshotPath, fullPage: true });
-      console.log(`📸 Screenshot saved: ${screenshotPath}`);
-    } catch (e) {}
-    return false;
-  };
+  });
 
   try {
-    let { page, getGaCount } = await setupPage(browser);
-    
-    if (activeAuth && activeAuth.username) {
-      await page.authenticate({ username: activeAuth.username, password: activeAuth.password }).catch(() => {});
-    }
-
-    // Setup Video Recording
-    if (options.recordVideo !== false) {
-      try {
-        const videosDir = path.resolve('./videos');
-        if (!existsSync(videosDir)) {
-          mkdirSync(videosDir, { recursive: true });
-        }
-        videoPath = path.join(videosDir, `organic_search_${Date.now()}.mp4`);
-        recorder = new PuppeteerScreenRecorder(page, { fps: 25, aspectRatio: '16:9' });
-        await recorder.start(videoPath);
-        console.log(`🎥 Video Recording Started: ${videoPath}`);
-      } catch (recErr) {
-        recorder = null;
-      }
-    }
-
-    // Step 1: Proxy Availability Check
-    console.log(`🌐 Testing network connection via api.ipify.org...`);
-    let connectionSuccess = false;
+    // Step 1: Check Outgoing IP & Geo
+    console.log(`🌐 Checking outgoing IP via api.ipify.org...`);
     try {
-      await page.goto('https://api.ipify.org?format=json', { waitUntil: 'networkidle2', timeout: 7000 });
-      const ipText = await page.evaluate(() => document.body.innerText);
-      if (ipText && !ipText.includes('ERR_')) {
-        console.log(`✅ Outgoing IP: ${ipText.trim()}`);
-        connectionSuccess = true;
-      }
-    } catch (err) {
-      console.warn(`⚠️ Primary proxy (${activeProxy}) is unavailable on local network.`);
-    }
-
-    if (!connectionSuccess && options.enableFallback) {
-      const fallback = getFallbackProxy();
-      if (fallback) {
-        console.log(`🔄 Trying harvested public proxy: ${fallback}...`);
-        if (recorder) { await recorder.stop().catch(() => {}); recorder = null; }
-        await browser.close();
-        activeProxy = fallback;
-        browser = await launchBrowser(activeProxy);
-        const res = await setupPage(browser);
-        page = res.page;
-        getGaCount = res.getGaCount;
-        
-        if (videoPath) {
-          recorder = new PuppeteerScreenRecorder(page, { fps: 25, aspectRatio: '16:9' });
-          await recorder.start(videoPath).catch(() => { recorder = null; });
-        }
-
-        try {
-          await page.goto('https://api.ipify.org?format=json', { waitUntil: 'networkidle2', timeout: 7000 });
-          const fbIp = await page.evaluate(() => document.body.innerText);
-          if (fbIp && !fbIp.includes('ERR_')) {
-            console.log(`✅ Fallback Proxy Outgoing IP: ${fbIp.trim()}`);
-            connectionSuccess = true;
-          }
-        } catch (e) {
-          console.warn(`⚠️ Fallback proxy timed out.`);
-        }
-      }
-
-      if (!connectionSuccess) {
-        console.log(`🌐 Falling back to Direct Connection for search flow...`);
-        if (recorder) { await recorder.stop().catch(() => {}); recorder = null; }
-        await browser.close();
-        activeProxy = null;
-        browser = await launchBrowser(null);
-        const res = await setupPage(browser);
-        page = res.page;
-        getGaCount = res.getGaCount;
-
-        if (videoPath) {
-          recorder = new PuppeteerScreenRecorder(page, { fps: 25, aspectRatio: '16:9' });
-          await recorder.start(videoPath).catch(() => { recorder = null; });
-        }
-      }
+      await page.goto('https://api.ipify.org?format=json', { waitUntil: 'domcontentloaded', timeout: 10000 });
+      const ipContent = await page.textContent('body');
+      console.log(`✅ Active Outgoing IP: ${ipContent.trim()}`);
+    } catch (e) {
+      console.warn(`⚠️ IP check notice: ${e.message}`);
     }
 
     // Step 2: Navigate to Google Search
     console.log(`🌐 Navigating to Google Search (https://www.google.com)...`);
-    await page.goto('https://www.google.com', { waitUntil: 'networkidle2', timeout: 35000 });
-
-    // Handle Google Consent Dialog if present
-    try {
-      const consentButton = await page.$('button[id*="L2AGLb"], #L2AGLb, button:has-text("Accept all")');
-      if (consentButton) {
-        console.log(`🍪 Dismissing Google Consent Dialog...`);
-        await consentButton.click();
-        await new Promise(r => setTimeout(r, 1000));
-      }
-    } catch (e) {}
+    await page.goto('https://www.google.com', { waitUntil: 'domcontentloaded', timeout: 35000 });
+    await handlePopupsAndVerification(page);
 
     // Step 3: Type Search Keyword
-    console.log(`⌨️ Searching for keyword: "${keyword}"...`);
-    const searchBoxSelector = 'textarea[name="q"], input[name="q"]';
-    await page.waitForSelector(searchBoxSelector, { timeout: 15000 });
-    await page.click(searchBoxSelector);
-    await page.type(searchBoxSelector, keyword, { delay: 80 });
-    await new Promise(r => setTimeout(r, 500));
+    console.log(`⌨️ Typing search query: "${keyword}"...`);
+    const searchBox = page.locator('textarea[name="q"], input[name="q"]').first();
+    await searchBox.waitFor({ state: 'visible', timeout: 15000 });
+    await searchBox.click();
+    await searchBox.pressSequentially(keyword, { delay: 75 + Math.floor(Math.random() * 40) });
+    await page.waitForTimeout(400);
     await page.keyboard.press('Enter');
 
-    console.log(`⏳ Waiting for Google Search Results...`);
-    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
+    console.log(`⏳ Waiting for Google Search results...`);
+    await page.waitForLoadState('domcontentloaded');
+    await page.waitForTimeout(2500);
+    await handlePopupsAndVerification(page);
 
-    // Wait for results to fully render (Google loads results dynamically)
-    await new Promise(r => setTimeout(r, 2500));
-
-    // Check for Google CAPTCHA/verification before scanning results
-    const googleVerification = await handleHumanVerification(page);
-    if (googleVerification) {
-      console.log(`📍 Passed Google verification, now on: ${page.url()}`);
-      await new Promise(r => setTimeout(r, 2000)); // Wait for results after verification
-    }
-
-    // Step 4: Find & Click Target Result
+    // Step 4: Scan and Find Target Domain
     console.log(`🔍 Scanning search results for target domain: "${targetDomain}"...`);
     
-    // Find matching link — use precise matching to avoid confusing justpaste.it with justpasteit.in
-    const targetLink = await page.evaluateHandle((domain) => {
-      const anchors = Array.from(document.querySelectorAll('a[href]'));
-      // First pass: exact domain match in href (e.g. justpasteit.in/ but NOT justpaste.it)
-      const exactMatch = anchors.find(a => {
+    // Find matching link with locator
+    const allLinks = await page.locator('a[href]').all();
+    let targetLinkLocator = null;
+
+    for (const link of allLinks) {
+      const href = await link.getAttribute('href').catch(() => null);
+      if (href) {
         try {
-          const url = new URL(a.href);
-          return url.hostname === domain || url.hostname === 'www.' + domain;
-        } catch { return false; }
-      });
-      if (exactMatch) return exactMatch;
-      // Fallback: substring match
-      return anchors.find(a => a.href && a.href.includes(domain));
-    }, targetDomain);
-
-    const linkElement = targetLink.asElement();
-
-    if (linkElement) {
-      console.log(`🎯 Found matching search result for "${targetDomain}"! Clicking...`);
-      await page.evaluate(el => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), linkElement);
-      await new Promise(r => setTimeout(r, 1000 + Math.random() * 1000));
-      
-      await Promise.all([
-        page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 35000 }).catch(() => {}),
-        linkElement.click()
-      ]);
-
-      console.log(`📍 Page after click: "${await page.title()}" (${page.url()})`);
-
-      // Step 5: Handle Human Verification if present
-      const hadVerification = await handleHumanVerification(page);
-      if (hadVerification) {
-        console.log(`📍 Page after verification: "${await page.title()}" (${page.url()})`);
+          const parsed = new URL(href, 'https://www.google.com');
+          if (parsed.hostname === targetDomain || parsed.hostname === 'www.' + targetDomain || href.includes(targetDomain)) {
+            targetLinkLocator = link;
+            break;
+          }
+        } catch (e) {}
       }
-
-      // Check if we actually landed on the target domain
-      const currentUrl = page.url();
-      if (!currentUrl.includes(targetDomain)) {
-        console.warn(`⚠️ Still not on target domain after verification. Current: ${currentUrl}`);
-        console.log(`🔗 Falling back to direct navigation...`);
-        await page.goto(`https://${targetDomain}/`, { waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
-      }
-
-      console.log(`✅ Arrived at Target Page: "${await page.title()}" (${page.url()})`);
-
-      // Step 6: Engagement & GA Session Tracking
-      console.log(`⏱️ Simulating 10s engaged session on target page for GA tracking...`);
-      for (let i = 0; i < 5; i++) {
-        await page.evaluate(() => {
-          window.scrollBy(0, 180);
-          window.dispatchEvent(new Event('focus'));
-          window.dispatchEvent(new Event('mousemove'));
-        });
-        await new Promise(r => setTimeout(r, 2000));
-      }
-
-      console.log(`📈 Organic Search GA Summary: Dispatched ${getGaCount()} GA tracking events!`);
-    } else {
-      console.warn(`⚠️ Could not locate domain "${targetDomain}" on first page of Google search results.`);
-      console.log(`🔗 Navigating directly to target site fallback...`);
-      await page.goto(`https://${targetDomain}/`, { waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
     }
 
-    console.log(`✨ Organic Search Session completed successfully!`);
+    if (targetLinkLocator) {
+      console.log(`🎯 Found matching search result for "${targetDomain}"! Scrolling and clicking...`);
+      await targetLinkLocator.scrollIntoViewIfNeeded().catch(() => {});
+      await page.waitForTimeout(1000 + Math.random() * 1000);
+      
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 35000 }).catch(() => {}),
+        targetLinkLocator.click()
+      ]);
+
+      console.log(`📍 Landed on: "${await page.title().catch(() => 'Title')}" (${page.url()})`);
+      await handlePopupsAndVerification(page);
+
+      // Verify we reached target domain
+      if (!page.url().includes(targetDomain)) {
+        console.warn(`⚠️ Not on target domain yet (${page.url()}). Navigating directly to target...`);
+        await page.goto(`https://${targetDomain}/`, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+      }
+
+      console.log(`✅ Arrived at Target Page: "${await page.title().catch(() => 'Title')}" (${page.url()})`);
+
+      // Step 5: Simulate Engaged User Behavior (Dwell & Scroll)
+      console.log(`⏱️ Simulating engaged visitor session on target site for GA tracking...`);
+      for (let i = 0; i < 5; i++) {
+        await page.mouse.wheel(0, 200 + Math.floor(Math.random() * 150));
+        await page.waitForTimeout(2000 + Math.floor(Math.random() * 1000));
+      }
+
+      console.log(`📈 Organic Search GA Summary: Dispatched ${gaEventsCount} GA tracking events!`);
+    } else {
+      console.warn(`⚠️ Target domain "${targetDomain}" not found in top Google SERP. Navigating directly...`);
+      await page.goto(`https://${targetDomain}/`, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+    }
+
+    console.log(`✨ Patchright Organic Search Session completed successfully!`);
 
   } catch (error) {
     console.error(`❌ Error during organic search session:`, error.message);
   } finally {
-    if (recorder) {
-      try {
-        await recorder.stop();
-        console.log(`🎬 Saved MP4 Video Artifact: ${videoPath}`);
-      } catch (e) {}
+    // Closing the context flushes the recorded video file
+    await context.close().catch(() => {});
+    await browser.close().catch(() => {});
+
+    // Identify and log recorded video
+    const video = page.video();
+    if (video) {
+      const savedPath = await video.path().catch(() => null);
+      if (savedPath) {
+        console.log(`🎬 Saved Video Recording: ${savedPath}`);
+      }
     }
-    if (browser) await browser.close();
   }
 }
 
@@ -680,7 +285,7 @@ function parseCLIArgs(argv) {
   let proxyUser = null;
   let proxyPass = null;
   let headless = false;
-  let enableFallback = true;
+  let enableFallback = false;
   let recordVideo = true;
 
   const positionals = [];
@@ -720,7 +325,6 @@ function parseCLIArgs(argv) {
 
   if (!keyword) keyword = positionals[0] || 'just paste it';
   if (!domain) domain = positionals[1] || 'justpasteit.in';
-  if (!proxy) proxy = 'socks5://127.0.0.1:9050';
 
   let auth = null;
   if (proxyUser || proxyPass) {
