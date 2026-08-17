@@ -34,6 +34,8 @@ jobs:
 
     env:
       AUTH_STATE_JSON: ${{ secrets.AUTH_STATE_JSON }}
+      PUPPETEER_SKIP_DOWNLOAD: "true"
+      PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
 
     steps:
       - name: Checkout repository
@@ -48,6 +50,11 @@ jobs:
         uses: browser-actions/setup-chrome@v1
         with:
           chrome-version: stable
+
+      - name: Install Node dependencies
+        run: |
+          cd tor_demo
+          npm install
 
       - name: Connect to SoftEther / VPNGate Node
         if: runner.os == 'Linux'
@@ -65,11 +72,6 @@ jobs:
             sleep 8
             curl -s https://ipinfo.io/json || true
           fi
-
-      - name: Install Node dependencies
-        run: |
-          cd tor_demo
-          npm install
 
       - name: Run Organic Search Sessions
         run: |
