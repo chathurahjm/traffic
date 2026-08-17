@@ -61,19 +61,6 @@ jobs:
           cd tor_demo
           npx patchright install chromium --with-deps
 
-      - name: Setup Buster Captcha Solver Extension
-        run: |
-          mkdir -p /tmp/buster_build
-          curl -sL https://github.com/dessant/buster/archive/refs/heads/main.zip -o /tmp/buster_build/buster.zip
-          unzip -q -o /tmp/buster_build/buster.zip -d /tmp/buster_build/
-          cd /tmp/buster_build/buster-main
-          sed -i "s/!\['x64', 'ia32'\].includes(process.arch)/false/g" gulpfile.js
-          npm install --legacy-peer-deps
-          npm run build:chrome
-          mkdir -p "$GITHUB_WORKSPACE/tor_demo/extensions/buster"
-          cp -r dist/chrome/* "$GITHUB_WORKSPACE/tor_demo/extensions/buster/"
-          rm -rf /tmp/buster_build
-
       - name: Connect to SoftEther / VPNGate Node
         run: |
           sudo apt-get update && sudo apt-get install -y openvpn
@@ -94,7 +81,7 @@ jobs:
             echo "⚠️ Could not obtain SoftEther VPNGate config, continuing..."
           fi
 
-      - name: Run Organic Search Sessions with Buster Extension
+      - name: Run Organic Search Sessions
         run: |
           sudo apt-get update && sudo apt-get install -y xvfb
           cd tor_demo

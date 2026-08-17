@@ -41,11 +41,11 @@ function getStorageStatePath() {
 }
 
 /**
- * Detects and handles consent dialogs or verification prompts (with Buster integration)
+ * Detects and automatically handles consent dialogs, checkboxes, and verification prompts
  */
 async function handlePopupsAndVerification(page) {
   try {
-    // 1. Consent buttons
+    // 1. Google Consent Dialogs
     const consentSelectors = [
       'button#L2AGLb',
       'button:has-text("Accept all")',
@@ -64,51 +64,44 @@ async function handlePopupsAndVerification(page) {
       }
     }
 
-    // 2. reCAPTCHA checkbox detection
+    // 2. reCAPTCHA Checkbox Auto-Click
     const recaptchaFrame = page.frameLocator('iframe[src*="recaptcha"], iframe[title*="reCAPTCHA"]').first();
     const checkbox = recaptchaFrame.locator('.recaptcha-checkbox-border, #recaptcha-anchor, .rc-anchor-checkbox').first();
-    if (await checkbox.isVisible({ timeout: 1500 }).catch(() => false)) {
-      console.log(`🔲 Found reCAPTCHA checkbox — attempting click...`);
-      await page.waitForTimeout(1000 + Math.random() * 1500);
+    if (await checkbox.isVisible({ timeout: 2000 }).catch(() => false)) {
+      console.log(`🔲 Found reCAPTCHA checkbox — executing automated human-like click...`);
+      // Human-like pause before clicking
+      await page.waitForTimeout(800 + Math.random() * 1200);
       await checkbox.click().catch(() => {});
-      await page.waitForTimeout(3000);
+      console.log(`⏳ Waiting for reCAPTCHA validation...`);
+      await page.waitForTimeout(3500);
     }
 
-    // 3. Buster: Captcha Solver for Humans button click in reCAPTCHA challenge frame
-    const challengeFrame = page.frameLocator('iframe[title*="challenge"], iframe[src*="bframe"]').first();
-    const busterButton = challengeFrame.locator('#solver-button, .buster-button, .rc-button-solver').first();
-    if (await busterButton.isVisible({ timeout: 2500 }).catch(() => false)) {
-      console.log(`⚡ Found Buster CAPTCHA Solver button — triggering solver...`);
-      await page.waitForTimeout(1000 + Math.random() * 1000);
-      await busterButton.click().catch(() => {});
-      console.log(`⏳ Buster solver triggered, waiting for automated verification...`);
-      await page.waitForTimeout(5000);
-    } else {
-      // Fallback: Click native audio challenge button if Buster button not yet rendered
-      const audioButton = challengeFrame.locator('#recaptcha-audio-button, button.rc-button-audio').first();
-      if (await audioButton.isVisible({ timeout: 1500 }).catch(() => false)) {
-        console.log(`🎙️ Found reCAPTCHA audio challenge button — clicking...`);
-        await page.waitForTimeout(1000 + Math.random() * 1000);
-        await audioButton.click().catch(() => {});
-        await page.waitForTimeout(3000);
-
-        // Check again if Buster solver button appeared inside audio frame
-        if (await busterButton.isVisible({ timeout: 2000 }).catch(() => false)) {
-          console.log(`⚡ Clicking Buster solver button on audio challenge...`);
-          await busterButton.click().catch(() => {});
-          await page.waitForTimeout(5000);
-        }
-      }
-    }
-
-    // 4. Cloudflare Turnstile iframe detection
+    // 3. Cloudflare Turnstile Checkbox Auto-Click
     const turnstileFrame = page.frameLocator('iframe[src*="challenges.cloudflare.com"], iframe[src*="turnstile"]').first();
     const turnstileBox = turnstileFrame.locator('input[type="checkbox"], .cb-i, label').first();
     if (await turnstileBox.isVisible({ timeout: 1500 }).catch(() => false)) {
-      console.log(`🔲 Found Turnstile checkbox — attempting click...`);
-      await page.waitForTimeout(1000 + Math.random() * 1500);
+      console.log(`🔲 Found Cloudflare Turnstile checkbox — executing click...`);
+      await page.waitForTimeout(1000 + Math.random() * 1200);
       await turnstileBox.click().catch(() => {});
-      await page.waitForTimeout(3000);
+      await page.waitForTimeout(3500);
+    }
+
+    // 4. Generic "Verify / I am human" buttons on page level
+    const pageVerifyButtons = [
+      'button[id*="verify"]',
+      'button[id*="submit"]',
+      'input[type="submit"][value*="Verify"]',
+      'input[type="submit"][value*="Submit"]',
+      '#challenge-form button'
+    ];
+    for (const sel of pageVerifyButtons) {
+      const vBtn = page.locator(sel).first();
+      if (await vBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+        console.log(`🔘 Clicking page-level verification button (${sel})...`);
+        await vBtn.click().catch(() => {});
+        await page.waitForTimeout(2500);
+        break;
+      }
     }
   } catch (e) {
     // Ignore verification handler errors
@@ -116,7 +109,7 @@ async function handlePopupsAndVerification(page) {
 }
 
 /**
- * Executes an Organic Google Search -> Click Result -> Engaged Target Session using Patchright with Buster
+ * Executes an Organic Google Search -> Click Result -> Engaged Target Session using Patchright
  * @param {string} keyword - Google search keyword (e.g. 'just paste it')
  * @param {string} targetDomain - Target domain to find & click (e.g. 'justpasteit.in')
  * @param {string} [socksProxy] - Optional proxy endpoint URL (e.g. socks5://127.0.0.1:9050)
@@ -130,43 +123,44 @@ export async function runOrganicTorSearchSession(
   auth = null,
   options = { headless: false, enableFallback: false, recordVideo: true }
 ) {
+  const isHeadless = options.headless ?? false;
   const videosDir = path.resolve(__dirname, 'videos');
   if (!fs.existsSync(videosDir)) {
     fs.mkdirSync(videosDir, { recursive: true });
   }
-
-  const busterExtensionPath = path.resolve(__dirname, 'extensions/buster');
-  const hasBuster = fs.existsSync(busterExtensionPath);
-  const userDataDir = path.resolve(__dirname, `temp_user_data_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
 
   console.log(`\n===================================================`);
   console.log(`🛡️ Patchright Undetected Organic Google Search Session`);
   console.log(`🔑 Keyword: "${keyword}"`);
   console.log(`🎯 Target Domain: "${targetDomain}"`);
   console.log(`🌐 Proxy: ${socksProxy || 'Direct / Active SoftEther VPN'}`);
-  console.log(`🧩 Buster Extension: ${hasBuster ? 'Loaded ✅' : 'Disabled'}`);
+  console.log(`🖥️ Mode: ${isHeadless ? 'Headless' : 'Visible UI'}`);
   console.log(`===================================================`);
 
   const storageState = getStorageStatePath();
 
-  const launchArgs = [
-    '--no-sandbox',
-    '--disable-setuid-sandbox',
-    '--disable-dev-shm-usage',
-    '--disable-blink-features=AutomationControlled',
-    '--window-size=1366,768'
-  ];
+  const launchOptions = {
+    headless: isHeadless,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-blink-features=AutomationControlled',
+      '--window-size=1366,768'
+    ]
+  };
 
-  if (hasBuster) {
-    console.log(`🧩 Loading Buster extension into browser context: ${busterExtensionPath}`);
-    launchArgs.push(
-      `--disable-extensions-except=${busterExtensionPath}`,
-      `--load-extension=${busterExtensionPath}`
-    );
+  if (socksProxy) {
+    launchOptions.proxy = {
+      server: socksProxy,
+      username: auth?.username,
+      password: auth?.password
+    };
   }
 
+  const browser = await chromium.launch(launchOptions);
+
   const contextOptions = {
-    headless: false, // Required for extension content scripts to run
     viewport: { width: 1366, height: 768 },
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
     locale: 'en-US',
@@ -175,17 +169,8 @@ export async function runOrganicTorSearchSession(
       'Accept-Language': 'en-US,en;q=0.9',
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
     },
-    args: launchArgs,
     ...(storageState ? { storageState } : {})
   };
-
-  if (socksProxy) {
-    contextOptions.proxy = {
-      server: socksProxy,
-      username: auth?.username,
-      password: auth?.password
-    };
-  }
 
   if (options.recordVideo !== false) {
     contextOptions.recordVideo = {
@@ -194,8 +179,8 @@ export async function runOrganicTorSearchSession(
     };
   }
 
-  const context = await chromium.launchPersistentContext(userDataDir, contextOptions);
-  const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
+  const context = await browser.newContext(contextOptions);
+  const page = await context.newPage();
 
   // Track Google Analytics events
   let gaEventsCount = 0;
@@ -298,7 +283,7 @@ export async function runOrganicTorSearchSession(
   } finally {
     // Closing the context flushes the recorded video file
     await context.close().catch(() => {});
-    try { fs.rmSync(userDataDir, { recursive: true, force: true }); } catch (e) {}
+    await browser.close().catch(() => {});
 
     // Identify and log recorded video
     const video = page.video();
