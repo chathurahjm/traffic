@@ -33,6 +33,7 @@ jobs:
         country: ['', 'US', 'JP', 'DE', 'KR']
 
     env:
+      AUTH_STATE_JSON_2: ${{ secrets.AUTH_STATE_JSON_2 }}
       AUTH_STATE_JSON: ${{ secrets.AUTH_STATE_JSON }}
       PUPPETEER_SKIP_DOWNLOAD: "true"
       PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"

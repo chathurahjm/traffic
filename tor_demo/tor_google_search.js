@@ -25,15 +25,17 @@ function getStorageStatePath() {
     }
   }
 
-  if (process.env.AUTH_STATE_JSON) {
+  const authSecret = process.env.AUTH_STATE_JSON_2 || process.env.AUTH_STATE_JSON;
+  if (authSecret) {
     try {
-      const parsed = JSON.parse(process.env.AUTH_STATE_JSON);
+      const parsed = JSON.parse(authSecret);
       const tmpPath = path.resolve(__dirname, 'temp_auth_state.json');
       fs.writeFileSync(tmpPath, JSON.stringify(parsed, null, 2), 'utf8');
-      console.log(`🔑 Created and loaded authenticated session from AUTH_STATE_JSON secret.`);
+      const secretName = process.env.AUTH_STATE_JSON_2 ? 'AUTH_STATE_JSON_2' : 'AUTH_STATE_JSON';
+      console.log(`🔑 Created and loaded authenticated session from ${secretName} secret.`);
       return tmpPath;
     } catch (e) {
-      console.warn(`⚠️ Failed to parse AUTH_STATE_JSON secret: ${e.message}`);
+      console.warn(`⚠️ Failed to parse auth state secret: ${e.message}`);
     }
   }
 
