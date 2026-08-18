@@ -11,6 +11,8 @@ const __dirname = path.dirname(__filename);
  */
 function getStorageStatePath() {
   const possiblePaths = [
+    path.resolve(__dirname, 'auth_state_2.json'),
+    path.resolve('auth_state_2.json'),
     path.resolve(__dirname, '../youtube/auth_state.json'),
     path.resolve(__dirname, 'youtube/auth_state.json'),
     path.resolve(__dirname, 'auth_state.json'),
@@ -60,7 +62,7 @@ async function handlePopupsAndVerification(page) {
       const btn = page.locator(selector).first();
       if (await btn.isVisible({ timeout: 1500 }).catch(() => false)) {
         console.log(`🍪 Dismissing Google consent prompt (${selector})...`);
-        await btn.click().catch(() => {});
+        await btn.click().catch(() => { });
         await page.waitForTimeout(1000);
         break;
       }
@@ -72,7 +74,7 @@ async function handlePopupsAndVerification(page) {
     if (await checkbox.isVisible({ timeout: 2000 }).catch(() => false)) {
       console.log(`🔲 Found reCAPTCHA checkbox — executing automated human-like click...`);
       await page.waitForTimeout(800 + Math.random() * 1000);
-      await checkbox.click().catch(() => {});
+      await checkbox.click().catch(() => { });
       console.log(`⏳ Checkbox clicked, waiting for validation or challenge modal...`);
       await page.waitForTimeout(2500);
     }
@@ -89,7 +91,7 @@ async function handlePopupsAndVerification(page) {
       if (await audioBtn.isVisible({ timeout: 2500 }).catch(() => false)) {
         console.log(`🎙️ Found reCAPTCHA Audio Challenge button — clicking...`);
         await page.waitForTimeout(1000 + Math.random() * 1000);
-        await audioBtn.click().catch(() => {});
+        await audioBtn.click().catch(() => { });
         console.log(`✅ Successfully clicked reCAPTCHA Audio Challenge button!`);
         await page.waitForTimeout(3000);
         break;
@@ -102,7 +104,7 @@ async function handlePopupsAndVerification(page) {
     if (await turnstileBox.isVisible({ timeout: 1500 }).catch(() => false)) {
       console.log(`🔲 Found Cloudflare Turnstile checkbox — executing click...`);
       await page.waitForTimeout(1000 + Math.random() * 1200);
-      await turnstileBox.click().catch(() => {});
+      await turnstileBox.click().catch(() => { });
       await page.waitForTimeout(3500);
     }
 
@@ -118,7 +120,7 @@ async function handlePopupsAndVerification(page) {
       const vBtn = page.locator(sel).first();
       if (await vBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
         console.log(`🔘 Clicking page-level verification button (${sel})...`);
-        await vBtn.click().catch(() => {});
+        await vBtn.click().catch(() => { });
         await page.waitForTimeout(2500);
         break;
       }
@@ -258,7 +260,7 @@ export async function runOrganicTorSearchSession(
       .toLowerCase();
 
     console.log(`🔍 Scanning search results for target domain: "${targetDomain}" (domain filter: "${cleanTargetDomain}")...`);
-    
+
     // Helper to find matching target link from locators
     const findMatchingTargetLink = async () => {
       const allLinks = await page.locator('a[href]').all();
@@ -271,7 +273,7 @@ export async function runOrganicTorSearchSession(
             if (hostname === cleanTargetDomain || hostname.endsWith('.' + cleanTargetDomain) || href.toLowerCase().includes(cleanTargetDomain)) {
               return link;
             }
-          } catch (e) {}
+          } catch (e) { }
         }
       }
       return null;
@@ -295,8 +297,8 @@ export async function runOrganicTorSearchSession(
       console.log(`🔍 Target link not found on page 1, checking page 2...`);
       const nextBtn = page.locator('#pnnext, a[aria-label="Next page"], a[aria-label="Page 2"]').first();
       if (await nextBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await nextBtn.click().catch(() => {});
-        await page.waitForLoadState('domcontentloaded').catch(() => {});
+        await nextBtn.click().catch(() => { });
+        await page.waitForLoadState('domcontentloaded').catch(() => { });
         await page.waitForTimeout(2500);
         await handlePopupsAndVerification(page);
         targetLinkLocator = await findMatchingTargetLink();
@@ -305,11 +307,11 @@ export async function runOrganicTorSearchSession(
 
     if (targetLinkLocator) {
       console.log(`🎯 Found matching search result for "${targetDomain}"! Scrolling and clicking...`);
-      await targetLinkLocator.scrollIntoViewIfNeeded().catch(() => {});
+      await targetLinkLocator.scrollIntoViewIfNeeded().catch(() => { });
       await page.waitForTimeout(1000 + Math.random() * 1000);
-      
+
       await Promise.all([
-        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 35000 }).catch(() => {}),
+        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 35000 }).catch(() => { }),
         targetLinkLocator.click()
       ]);
 
@@ -353,8 +355,8 @@ export async function runOrganicTorSearchSession(
     console.error(`❌ Error during organic search session:`, error.message);
   } finally {
     // Closing the context flushes the recorded video file
-    await context.close().catch(() => {});
-    await browser.close().catch(() => {});
+    await context.close().catch(() => { });
+    await browser.close().catch(() => { });
 
     // Identify and log recorded video
     const video = page.video();
