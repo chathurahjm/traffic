@@ -20,8 +20,8 @@ on:
         required: false
         default: ''
   schedule:
-    # Triggers every 30 minutes
-    - cron: '*/30 * * * *'
+    # Triggers every 2 hours
+    - cron: '0 */2 * * *'
 
 jobs:
   organic-search-matrix:
