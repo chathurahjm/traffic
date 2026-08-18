@@ -33,7 +33,7 @@ async function main() {
         targetDomain,
         null, // Direct connection / System SoftEther VPN
         null,
-        { headless: isHeadless, enableFallback: false, recordVideo: true }
+        { headless: isHeadless, recordVideo: true }
       );
       successfulSessions++;
     } catch (err) {

@@ -34,7 +34,7 @@ async function main() {
       targetDomain,
       socksProxy, 
       { username: randomUser, password: randomPass },
-      { headless: isHeadless, enableFallback: true, recordVideo: true }
+      { headless: isHeadless, recordVideo: true }
     );
 
     if (i < iterations) {

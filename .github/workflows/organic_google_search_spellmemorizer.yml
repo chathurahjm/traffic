@@ -1,0 +1,99 @@
+name: SoftEther VPNGate Organic Google Search Matrix - Spell Memorizer
+
+on:
+  workflow_dispatch:
+    inputs:
+      keyword:
+        description: 'Google Search Keyword'
+        required: false
+        default: 'fashion spelling'
+      target_domain:
+        description: 'Target Domain to Find & Click'
+        required: false
+        default: 'https://www.spellmemorizer.com/'
+      sessions:
+        description: 'Sessions per Runner'
+        required: false
+        default: '14'
+      vpn_country:
+        description: 'Override VPN Country (leave empty to use matrix distribution)'
+        required: false
+        default: ''
+  schedule:
+    # Triggers every 2 hours
+    - cron: '0 */2 * * *'
+
+jobs:
+  organic-search-matrix:
+    name: Organic Search (${{ matrix.country || 'Global-Fastest' }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        country: ['', 'US', 'JP', 'DE', 'KR']
+
+    env:
+      AUTH_STATE_JSON_2: ${{ secrets.AUTH_STATE_JSON_2 }}
+      AUTH_STATE_JSON: ${{ secrets.AUTH_STATE_JSON }}
+      PUPPETEER_SKIP_DOWNLOAD: "true"
+      PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      - name: Install Node dependencies
+        run: |
+          cd tor_demo
+          npm install
+
+      - name: Install Patchright Browser
+        run: |
+          cd tor_demo
+          npx patchright install chromium --with-deps
+
+      - name: Connect to SoftEther / VPNGate Node
+        run: |
+          sudo apt-get update && sudo apt-get install -y openvpn
+          TARGET_COUNTRY="${{ github.event.inputs.vpn_country || matrix.country }}"
+          COUNTRY_FLAG=""
+          if [ -n "$TARGET_COUNTRY" ]; then
+            COUNTRY_FLAG="--country $TARGET_COUNTRY"
+          fi
+          echo "🌐 Finding top SoftEther VPNGate relay node for: ${TARGET_COUNTRY:-Global-Fastest}..."
+          node youtube/vpngate.js $COUNTRY_FLAG --export /tmp/vpngate.ovpn
+          if [ -f /tmp/vpngate.ovpn ]; then
+            echo "🚀 Starting OpenVPN connection to SoftEther relay..."
+            sudo openvpn --config /tmp/vpngate.ovpn --daemon
+            sleep 10
+            echo "📍 Active SoftEther Outgoing IP & Geo:"
+            curl -s https://ipinfo.io/json || true
+          else
+            echo "⚠️ Could not obtain SoftEther VPNGate config, continuing..."
+          fi
+
+      - name: Run Organic Search Sessions
+        run: |
+          sudo apt-get update && sudo apt-get install -y xvfb
+          cd tor_demo
+          xvfb-run --auto-servernum --server-args="-screen 0 1366x768x24" node matrix_runner.js "${{ github.event.inputs.sessions || '14' }}" "${{ github.event.inputs.keyword || 'fashion spelling' }}" "${{ github.event.inputs.target_domain || 'https://www.spellmemorizer.com/' }}"
+
+      - name: Upload Search Video Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: organic-search-videos-spellmemorizer-${{ matrix.country || 'global' }}
+          path: |
+            tor_demo/videos/*.mp4
+            tor_demo/videos/*.webm
+          retention-days: 7

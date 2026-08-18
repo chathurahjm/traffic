@@ -134,14 +134,14 @@ async function handlePopupsAndVerification(page) {
  * @param {string} targetDomain - Target domain to find & click (e.g. 'justpasteit.in')
  * @param {string} [socksProxy] - Optional proxy endpoint URL (e.g. socks5://127.0.0.1:9050)
  * @param {{username?: string, password?: string}} [auth] - Optional proxy auth
- * @param {{headless?: boolean, enableFallback?: boolean, recordVideo?: boolean}} [options] - Options
+ * @param {{headless?: boolean, recordVideo?: boolean}} [options] - Options
  */
 export async function runOrganicTorSearchSession(
   keyword = 'just paste it',
   targetDomain = 'justpasteit.in',
   socksProxy = null,
   auth = null,
-  options = { headless: false, enableFallback: false, recordVideo: true }
+  options = { headless: false, recordVideo: true }
 ) {
   const isHeadless = options.headless ?? false;
   const videosDir = path.resolve(__dirname, 'videos');
@@ -251,22 +251,55 @@ export async function runOrganicTorSearchSession(
     await handlePopupsAndVerification(page);
 
     // Step 4: Scan and Find Target Domain
-    console.log(`🔍 Scanning search results for target domain: "${targetDomain}"...`);
-    
-    // Find matching link with locator
-    const allLinks = await page.locator('a[href]').all();
-    let targetLinkLocator = null;
+    const cleanTargetDomain = (targetDomain || '')
+      .replace(/^https?:\/\//i, '')
+      .replace(/\/.*$/, '')
+      .replace(/^www\./i, '')
+      .toLowerCase();
 
-    for (const link of allLinks) {
-      const href = await link.getAttribute('href').catch(() => null);
-      if (href) {
-        try {
-          const parsed = new URL(href, 'https://www.google.com');
-          if (parsed.hostname === targetDomain || parsed.hostname === 'www.' + targetDomain || href.includes(targetDomain)) {
-            targetLinkLocator = link;
-            break;
-          }
-        } catch (e) {}
+    console.log(`🔍 Scanning search results for target domain: "${targetDomain}" (domain filter: "${cleanTargetDomain}")...`);
+    
+    // Helper to find matching target link from locators
+    const findMatchingTargetLink = async () => {
+      const allLinks = await page.locator('a[href]').all();
+      for (const link of allLinks) {
+        const href = await link.getAttribute('href').catch(() => null);
+        if (href) {
+          try {
+            const parsed = new URL(href, 'https://www.google.com');
+            const hostname = parsed.hostname.toLowerCase().replace(/^www\./, '');
+            if (hostname === cleanTargetDomain || hostname.endsWith('.' + cleanTargetDomain) || href.toLowerCase().includes(cleanTargetDomain)) {
+              return link;
+            }
+          } catch (e) {}
+        }
+      }
+      return null;
+    };
+
+    let targetLinkLocator = await findMatchingTargetLink();
+
+    // If not immediately found in initial view, scroll down SERP to reveal results
+    if (!targetLinkLocator) {
+      console.log(`🔍 Target link not in initial view, scrolling SERP to search further...`);
+      for (let s = 0; s < 4; s++) {
+        await page.mouse.wheel(0, 600);
+        await page.waitForTimeout(1000);
+        targetLinkLocator = await findMatchingTargetLink();
+        if (targetLinkLocator) break;
+      }
+    }
+
+    // If still not found, check page 2
+    if (!targetLinkLocator) {
+      console.log(`🔍 Target link not found on page 1, checking page 2...`);
+      const nextBtn = page.locator('#pnnext, a[aria-label="Next page"], a[aria-label="Page 2"]').first();
+      if (await nextBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await nextBtn.click().catch(() => {});
+        await page.waitForLoadState('domcontentloaded').catch(() => {});
+        await page.waitForTimeout(2500);
+        await handlePopupsAndVerification(page);
+        targetLinkLocator = await findMatchingTargetLink();
       }
     }
 
@@ -284,17 +317,29 @@ export async function runOrganicTorSearchSession(
       await handlePopupsAndVerification(page);
 
       // Verify we reached target domain organically
-      if (page.url().includes(targetDomain)) {
+      if (page.url().toLowerCase().includes(cleanTargetDomain)) {
         console.log(`✅ Arrived at Target Page organically: "${await page.title().catch(() => 'Title')}" (${page.url()})`);
 
-        // Step 5: Simulate Engaged User Behavior (Dwell & Scroll)
-        console.log(`⏱️ Simulating engaged visitor session on target site for GA tracking...`);
-        for (let i = 0; i < 5; i++) {
-          await page.mouse.wheel(0, 200 + Math.floor(Math.random() * 150));
-          await page.waitForTimeout(2000 + Math.floor(Math.random() * 1000));
+        // Step 5: Simulate Engaged User Behavior (Dwell 10 seconds & Scroll Down)
+        console.log(`⏱️ Simulating engaged visitor session on target site: dwelling for 10 seconds and scrolling down...`);
+        const dwellStartTime = Date.now();
+        const minDwellTimeMs = 10000;
+        const scrollSteps = 5;
+        const stepDelay = Math.floor(minDwellTimeMs / scrollSteps);
+
+        for (let i = 0; i < scrollSteps; i++) {
+          const scrollDistance = 250 + Math.floor(Math.random() * 200);
+          console.log(`📜 Scrolling down (${scrollDistance}px) [Step ${i + 1}/${scrollSteps}]...`);
+          await page.mouse.wheel(0, scrollDistance);
+          await page.waitForTimeout(stepDelay);
         }
 
-        console.log(`📈 Organic Search GA Summary: Dispatched ${gaEventsCount} GA tracking events!`);
+        const elapsed = Date.now() - dwellStartTime;
+        if (elapsed < minDwellTimeMs) {
+          await page.waitForTimeout(minDwellTimeMs - elapsed);
+        }
+
+        console.log(`📈 Organic Search GA Summary: Dispatched ${gaEventsCount} GA tracking events! Total dwell time: ${((Date.now() - dwellStartTime) / 1000).toFixed(1)}s`);
       } else {
         console.warn(`⚠️ Clicked search result but landed on: ${page.url()}`);
       }
@@ -331,7 +376,6 @@ function parseCLIArgs(argv) {
   let proxyUser = null;
   let proxyPass = null;
   let headless = false;
-  let enableFallback = false;
   let recordVideo = true;
 
   const positionals = [];
@@ -340,8 +384,6 @@ function parseCLIArgs(argv) {
     const arg = args[i];
     if (arg === '--headless') {
       headless = true;
-    } else if (arg === '--no-fallback' || arg === '--disable-fallback') {
-      enableFallback = false;
     } else if (arg === '--no-video' || arg === '--disable-video') {
       recordVideo = false;
     } else if (arg.startsWith('--keyword=')) {
@@ -377,7 +419,7 @@ function parseCLIArgs(argv) {
     auth = { username: proxyUser || '', password: proxyPass || '' };
   }
 
-  return { keyword, domain, proxy, auth, options: { headless, enableFallback, recordVideo } };
+  return { keyword, domain, proxy, auth, options: { headless, recordVideo } };
 }
 
 // Execute standalone if called directly
